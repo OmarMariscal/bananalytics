@@ -1,8 +1,7 @@
-from logging import exception
 from fastapi import FastAPI
-from schemas import PaqueteVentasSchema
-from database import crear_tablas, obtener_conexion
-from sync import sincronizacion_nocturna, procesar_cola_pendientes
+from local_client.backend.sync.sync import PaqueteVentasSchema
+from local_client.backend.db.sqlite_manager import crear_tablas, obtener_conexion
+from local_client.backend.sync.sync import sincronizacion_nocturna, procesar_cola_pendientes
 import asyncio
 
 app = FastAPI()
