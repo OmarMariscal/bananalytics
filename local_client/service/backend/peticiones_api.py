@@ -36,3 +36,29 @@ class ApiClient:
 
         except requests.exceptions.RequestException:
             return {"status": "fail", "mensaje": "No se pudo conectar con el servidor"}
+
+    def get_dashboard_data(self, store_id: str) -> dict:
+        url = f"{self.base_url}/business/{store_id}/predictions"
+        headers = {"X-API-Key": self.api_key}
+
+        try:
+            respuesta = requests.get(url, headers=headers, timeout=10)
+            if respuesta.status_code == 200:
+                return respuesta.json()
+            return {}
+        except requests.exceptions.RequestException:
+            return {}
+
+    def get_product_data(self, store_id: str, barcode: str) -> dict:
+        url = f"{self.base_url}/business/{store_id}/{barcode}"
+        headers = {"X-API-Key": self.api_key}
+
+        try:
+            respuesta = requests.get(url, headers=headers, timeout=10)
+            if respuesta.status_code == 200:
+                return respuesta.json()
+            return {}
+        except requests.exceptions.RequestException:
+            return {}
+
+
