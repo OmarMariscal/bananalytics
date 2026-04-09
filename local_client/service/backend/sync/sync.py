@@ -7,11 +7,12 @@ from datetime import datetime
 from service.backend.db.sqlite_manager import SQLiteManager
 
 class SyncDaemon:
+    #Constructor del Daemon, recibe la conexion a la base de datos y define rutas de los archivos locales y la URL de la nube
     def __init__(self, db: SQLiteManager):
         self.db = db
         self.archivo_cola = "missing-items.txt"
         self.archivo_config = "settings.json"
-        self.api_url = "http://127.0.0.1:8000/api/v1/ventas/sync"
+        self.api_url = "https://bananalytics.onrender.com/api/v1/ventas/sync"
         self.api_key = "tu_clave_secreta"
 
     def start(self):
@@ -20,14 +21,22 @@ class SyncDaemon:
         hilo.start()
         print("Daemon de sincronizacion iniciado en segundo plano")
 
+    #Intenta mandar los archivos atrasados en cola pendientes. Una vez sean las 12, intenta mandar las ventas empaquetadas del dia
     def _ciclo_infinito(self):
         time.sleep(5)
         while True:
             self.procesar_cola_pendientes()
+            hora_actual = datetime.now().hour
+            if hora_actual == 0:
+                print("Iniciando cierre de caja automatico...")
+                self.sincronizacion_nocturna()
+                time.sleep(3600)
+
             time.sleep(1800)
 
+    #Busca el archivo settings.json para averiguar el ID de la tienda
     def leer_config(self):
-        if not os.path.exists(self.archivo_config):
+        if not os.path.exists(self.archivo_config): #Si el archivo no existe, se crea uno de emergencia
             config_default = {
                 "system": {"first_launch_completed": False},
                 "store_profile": {"id_store": 1}
@@ -39,9 +48,10 @@ class SyncDaemon:
         with open(self.archivo_config, "r") as archivo:
             return json.load(archivo)
 
+    #Saca todo lo del SQLite y lo convierte en el JSON esperado por Angel
     def empaquetar_ventas(self):
         config = self.leer_config()
-        id_store = config.get("sotre_profile", {}).get("id_store", 1)
+        id_store = config.get("store_profile", {}).get("id_store", 1)
 
         hoy = datetime.now()
         date_str = hoy.strftime("%d-%m-%Y")
@@ -61,7 +71,7 @@ class SyncDaemon:
         for fila in filas:
             barcode, hora_venta, amount = fila[0], fila[1], fila[2]
 
-            if hora_venta not in transacciones:
+            if hora_venta not in transacciones: #Agrupa los productos escaneados bajo la misma hora de venta
                 transacciones[hora_venta] = {
                     "time": hora_venta,
                     "products": []
@@ -79,6 +89,7 @@ class SyncDaemon:
         }
         return paquete
 
+    #Intenta mandar la caja a la nube
     def enviar_paquete(self, paquete):
         headers = {"X-API-Key": self.api_key}
 
@@ -90,10 +101,12 @@ class SyncDaemon:
             else:
                 print(f"Error del servidor nube: {respuesta.status_code}")
                 return False
+        #Si no hay internet, imprime el aviso y devuelve False
         except(requests.exceptions.ConnectionError, requests.exceptions.Timeout):
             print("Sin conexion a la API de la nube, guardando en cola offline")
             return False
 
+    #Si el paquete llego bien a la nube, borra la tabla sales_now, para no mandar duplicados
     def vaciar_sqlite(self):
         conexion = self.db.obtener_conexion()
         cursor = conexion.cursor()
@@ -102,15 +115,17 @@ class SyncDaemon:
         conexion.close()
         print("SQLite limpiado tras sincronizacion exitosa")
 
+    #Si no hay internet, convierte el paquete JSON a una linea de texto simple
     def guardar_en_cola(self, paquete):
         linea = json.dumps(paquete)
         with open(self.archivo_cola, "a") as archivo:
-            archivo.write(linea + "\n")
+            archivo.write(linea + "\n") #La a es de adjuntar al archivo missing-items.txt
         print(f"JSON guardado en cola: {self.archivo_cola}")
 
     def sincronizacion_nocturna(self):
         """Esto puede ser llamado manualmente si hay un boton en la UI."""
         print("Iniciando sincronizacion...")
+        #Tomamos todo lo del SQLite y lo ordenamos en el formato JSON
         paquete = self.empaquetar_ventas()
 
         if paquete is None:
@@ -123,19 +138,22 @@ class SyncDaemon:
             self.guardar_en_cola(paquete)
 
     def procesar_cola_pendientes(self):
+        #Verificamos si existe el archivo o si el archivo esta vacio
         if not os.path.isfile(self.archivo_cola) or os.stat(self.archivo_cola).st_size == 0:
             return
 
+        #Leemos las lineas
         with open(self.archivo_cola, "r") as archivo:
             lineas = archivo.readlines()
 
-        lineas_pendientes = []
+        lineas_pendientes = [] #Creamos esta lista vacia para mandar aqui las lineas que vuelvan a fallar
         conexion_activa = True
 
         print(f"Intentando reenviar {len(lineas)} paquetes atrasados de la cola...")
 
+        #Procesamos paquete por paquete
         for linea in lineas:
-            if not linea.strip():
+            if not linea.strip(): #Se ignoran saltos de lineas vacios
                 continue
 
             if not conexion_activa:
@@ -143,7 +161,7 @@ class SyncDaemon:
                 continue
 
             try:
-                paquete = json.loads(linea)
+                paquete = json.loads(linea) #Transformamos el texto a JSON y lo mandamos
                 headers = {"X-API-Key": self.api_key}
 
                 respuesta = requests.post(self.api_url, json=paquete, headers=headers)
@@ -158,7 +176,7 @@ class SyncDaemon:
                 conexion_activa = False
                 lineas_pendientes.append(linea)
 
-        with open(self.archivo_cola, "w") as archivo:
+        with open(self.archivo_cola, "w") as archivo: #Si falla, se abra el mismo archivo en modo escritura, escribiendo unicamente las lineas pendientes
             for linea_pendiente in lineas_pendientes:
                 archivo.write(linea_pendiente)
 

@@ -23,41 +23,41 @@ class ConfigManager:
         except (json.JSONDecodeError, KeyError):
             return True
 
-def create_configurations(self, user: User, id_store: str) -> bool:
-    #Organiza los datos como los tenemos definidos
-    config_data = {
-        #Rutas tecnicas
-        "system": {
-            "first_launch_completed": True,
-            "local_db_path": "./tienda.db"
-        },
-        #Datos del dueno
-        "store_profile": {
-            "id_store": int(id_store),
-            "owner_name": user.name,
-            "email": user.email,
-            "location": {
-                "city": "Guadalajara, Jalisco",
-                "lat": 20.6596,
-                "lng": -103.3496
+    def create_configurations(self, user: User, id_store: str) -> bool:
+        #Organiza los datos como los tenemos definidos
+        config_data = {
+            #Rutas tecnicas
+            "system": {
+                "first_launch_completed": True,
+                "local_db_path": "./tienda.db"
+            },
+            #Datos del dueno
+            "store_profile": {
+                "id_store": int(id_store),
+                "owner_name": user.name,
+                "email": user.email,
+                "location": {
+                    "city": "Guadalajara, Jalisco",
+                    "lat": 20.6596,
+                    "lng": -103.3496
+                }
             }
         }
-    }
-    with open(self.archivo_config, "w") as f:
-        json.dump(config_data, f, indent=4)
-    return True
+        with open(self.archivo_config, "w") as f:
+            json.dump(config_data, f, indent=4)
+        return True
 
-#Datos para que el Rogi los muestre en el perfil del usuario
-#Transforma los datos crudos del JSON en un objeto tipo ConfigStats
-def get_app_stats(self) -> ConfigStats:
-    if self.is_first_start():
-        return None
-    with open(self.archivo_config, "r") as f:
-        config = json.load(f)
-        perfil = config.get("store_profile", {})
-        return ConfigStats(
-            user_name=perfil.get("owner_name", "Usuario"),
-            email=perfil.get("email", ""),
-            theme_mode=True,
-            curent_date=date.today()
-        )
+    #Datos para que el Rogi los muestre en el perfil del usuario
+    #Transforma los datos crudos del JSON en un objeto tipo ConfigStats
+    def get_app_stats(self) -> ConfigStats:
+        if self.is_first_start():
+            return None
+        with open(self.archivo_config, "r") as f:
+            config = json.load(f)
+            perfil = config.get("store_profile", {})
+            return ConfigStats(
+                user_name=perfil.get("owner_name", "Usuario"),
+                email=perfil.get("email", ""),
+                theme_mode=True,
+                current_date=date.today()
+            )

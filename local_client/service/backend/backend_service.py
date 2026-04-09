@@ -7,7 +7,7 @@ from service.backend.config.config_manager import ConfigManager
 from local_client.service.backend.peticiones_api import ApiClient
 from datetime import datetime, date
 
-class BackendService:
+class BackendService: #Activa todas las herramientas, si no es primer inicio, arranca el daemon
     def __init__(self):
         self.db = SQLiteManager()
         self.config = ConfigManager()
@@ -17,6 +17,8 @@ class BackendService:
         if not self.config.is_first_start():
             self.daemon.start()
 
+    #Metodo privado del backend
+    #Sirve para auxiliar a otros metodos
     def _get_store_id(self) -> str:
         import json
         try:
@@ -26,6 +28,9 @@ class BackendService:
         except:
             return "1"
 
+    #Se le pide a la api los datos del dashboard y de ellos, solo se seleccionan las alertas
+    #Se extraen los datos crudos y se transforman en objetos Python,
+    #Se devuelve una lista de estos objetos
     def get_alerts(self) -> list[PredictionAlert]:
         caja_dashboard = self.api.get_dashboard_data(self._get_store_id())
         alertas_brutas = caja_dashboard.get("alerts", [])
@@ -52,7 +57,9 @@ class BackendService:
             )
             alertas_formateadas.append(nueva_alerta)
         return alertas_formateadas
-    
+
+    #Se le pide a la API la info de algun producto en especifico
+    #Inyectamos imagenes por defecto si Angel no manda ninguna
     def get_product_detail(self, barcode: str) -> PredictionAlert:
         caja_producto = self.api.get_product_data(self._get_store_id(), barcode)
         detalle = caja_producto.get("detail", {})
@@ -74,7 +81,9 @@ class BackendService:
             type=detalle.get("type", "neutral"),
             feature=detalle.get("feature", False)
         )
-    
+
+    #Mezcla el total de escaneos de SQLite con el conteo de lineas de missing-items.txt
+    #Se regresa un diccionario con 4 llaves exactas
     def get_dashboard_stats(self) -> dict:
         stats_db = self.db.get_today_stats()
 
@@ -92,14 +101,19 @@ class BackendService:
         }
 
     #Grafica Central del dashboard
+    #Se devuelve el diccionario con listas adentro
+    #Funcion faltante en el Mock
     def get_dashboard_details(self) -> dict:
         caja_dashboard = self.api.get_dashboard_data(self._get_store_id())
         return caja_dashboard.get("weekly_summary", {"labels": [], "actual_sales": [], "predicted_sales": []})
 
-    #La validación debe ser con un archivo creado con el método create_configurations    
+    #La validación debe ser con un archivo creado con el método create_configurations
+    #Busca en el config manager, con un True o False Flet decidira si manda la pantalla de registro o al dashboard
     def is_first_start(self) -> bool:
         return self.config.is_first_start()
 
+    #Se manda el usuario registrado a las peticiones api, y se ordena crear el JSON y arranca el Daemon
+    #Se regresa el diccionario con el status
     def register_user(self, user: User) -> dict:
         respuesta_api = self.api.register_user(user)
 
@@ -108,10 +122,9 @@ class BackendService:
             self.daemon.start()
 
         return respuesta_api
-    
-    def create_configurations(self) -> bool:
-        return True
 
+    #Saca el historial del producto
+    #Se devuelve una lista de diccionarios. Flet usara los puntos X y Y para dibujar la linea ondulada de ventas en la parte inferior de la pantalla del producto
     def get_sales_history(self, barcode: str) -> list[dict]:
         caja_producto = self.api.get_product_data(self._get_store_id(), barcode)
         historial_bruto = caja_producto.get("history", [])
@@ -126,9 +139,11 @@ class BackendService:
             lista_formateada = [{"date": f, "volume": v} for f, v in zip(fechas, ventas)]
             return lista_formateada
         return []
-    
+
+    #Se pide el perfil al config_manager, se devuelve un objeto ConfigStats
     def get_app_stats(self) -> ConfigStats:
         return self.config.get_app_stats()
+
     
     def get_server_status(self) -> bool:
         return True

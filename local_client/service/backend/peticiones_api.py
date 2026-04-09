@@ -6,7 +6,7 @@ from shared.models.user import User
 class ApiClient:
     def __init__(self):
         self.api_key = "tu_clave_secreta" #Llave para permitir el acceso
-        self.base_url = "http://127.0.0.1:8000/api/v1" #Direccion base de la API de Angel
+        self.base_url = "https://bananalytics.onrender.com/api/v1" #Direccion base de la API de Angel
 
     #Rogelio pasa el usuario y este metodo lo envia
     def register_user(self, user: User) -> dict:
@@ -37,8 +37,9 @@ class ApiClient:
         except requests.exceptions.RequestException:
             return {"status": "fail", "mensaje": "No se pudo conectar con el servidor"}
 
+    #Traemos de la API toda la informacion que Rogi ocupe para el dashboard
     def get_dashboard_data(self, store_id: str) -> dict:
-        url = f"{self.base_url}/business/{store_id}/predictions"
+        url = f"{self.base_url}/business/{store_id}/predictions" #Ruta con el id de la tienda inyectado para identificar que datos enviar
         headers = {"X-API-Key": self.api_key}
 
         try:
@@ -49,6 +50,7 @@ class ApiClient:
         except requests.exceptions.RequestException:
             return {}
 
+    #Viaja a la API para traer toda la informacion de un solo producto
     def get_product_data(self, store_id: str, barcode: str) -> dict:
         url = f"{self.base_url}/business/{store_id}/{barcode}"
         headers = {"X-API-Key": self.api_key}
