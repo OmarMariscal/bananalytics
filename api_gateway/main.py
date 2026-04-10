@@ -7,10 +7,10 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import List
 #Importación de SQLAlchemy para la conexión a Neon (BD)
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 #Importamos las clases de la base de datos para hacer consultas e inserciones
-from models import Store, Product, Sale
+from models import Store, Product, Sale, Prediction
 
 #----------------------------- MODELOS DE DATOS -----------------------------
 # Molde para los productos individuales
@@ -308,3 +308,31 @@ def sync_ventas(
         "ventas_procesadas": 0, # Esto lo cambiarás luego cuando hagas el procesamiento
         "mensaje": f"Se recibieron datos de la tienda {tienda_id} para la fecha {fecha}"
     }
+
+#Obtener Predicciones por Tienda (Necesita autenticación con API Key)***************************************
+@app.get("/api/v1/business/{store_id}/predictions", dependencies=[Depends(verify_api_key)])
+def get_predictions(store_id: int, db: Session = Depends(get_db)):
+    
+    #Hacemos un JOIN entre Prediction y Product usando el barcode como puente
+    resultados = db.query(Prediction, Product).join(
+        Product, Prediction.barcode == Product.barcode
+    ).filter(
+        Prediction.store_id == store_id
+    ).all()
+
+    respuesta = []
+    
+    #"pred" contiene los datos de la predicción, "prod" los datos del producto
+    for pred, prod in resultados:
+        respuesta.append({
+            "product_name": prod.product_name,
+            "Category": prod.category,
+            "image_url": prod.image_url,
+            "objetive_date": pred.objetive_date.strftime("%Y-%m-%d"), # Convertimos la fecha a texto
+            "prediction": pred.prediction,
+            "percentage_average_deviation": pred.percentage_average_deviation,
+            "feature": pred.feature,
+            "type": pred.type
+        })
+        
+    return respuesta
