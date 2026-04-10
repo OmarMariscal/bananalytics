@@ -1,6 +1,6 @@
 import os
 import requests
-from datetime import datetime #Para generar fechas de registro
+from datetime import datetime, date #Para generar fechas de registro
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import APIKeyHeader
 from dotenv import load_dotenv
@@ -313,11 +313,15 @@ def sync_ventas(
 @app.get("/api/v1/business/{store_id}/predictions", dependencies=[Depends(verify_api_key)])
 def get_predictions(store_id: int, db: Session = Depends(get_db)):
     
+    # Obtenemos la fecha actual del servidor
+    hoy = date.today()
+
     #Hacemos un JOIN entre Prediction y Product usando el barcode como puente
     resultados = db.query(Prediction, Product).join(
         Product, Prediction.barcode == Product.barcode
     ).filter(
         Prediction.store_id == store_id
+        Prediction.objetive_date > hoy  #que la fecha de objetivo sea mayor a la de hoy
     ).all()
 
     respuesta = []
