@@ -77,12 +77,12 @@ class MockBackendService:
         ) 
     
     def is_first_start(self) -> bool:
-        return False
+        return True
     
     def register_user(self, user: User) -> dict:
         return {
-            'status': False,
-            'message': 'El correo ya está registrado en la base de datos'
+            'status': True,
+            'message': 'El correo a sido registrado'
         }
 
     def get_sales_history(self) -> list[dict]:
