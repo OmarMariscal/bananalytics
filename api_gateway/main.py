@@ -10,7 +10,7 @@ from typing import List
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 #Importamos las clases de la base de datos para hacer consultas e inserciones
-from models import Store, Product, Sale, Prediction
+from models import Tienda, Producto, Venta, Prediccion
 
 #----------------------------- MODELOS DE DATOS -----------------------------
 # Molde para los productos individuales
@@ -128,7 +128,7 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
 
             # Usamos ese índice para sacar el clima exacto de ese bloque
             temp_actual = temperaturas[indice_hora]
-            codigo_clima_actual = str(codigos_clima[indice_hora]) # Convertimos a String 
+            codigo_clima_actual = codigos_clima[indice_hora]
 
             #Recorremos cada producto dentro de ese bloque
             for producto_recibido in bloque_venta.products:
@@ -138,14 +138,14 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
                 producto_info = obtener_o_crear_producto(codigo, db)
 
                 #Preparamos el registo para la tabla sales_database
-                nueva_venta = Sale(
+                nueva_venta = Venta(
                     store_id=tienda_id,
                     barcode=codigo,
                     date=fecha_open_meteo, #Formato YYYY-MM-DD
                     time=bloque_venta.time, #Guardamos la hora exacta: "12:30:00"
                     amount=producto_recibido.amount,
                     temperature=temp_actual,
-                    weather_resume=codigo_clima_actual
+                    weather_resume_wmo_code=codigo_clima_actual
                 )
                 db.add(nueva_venta)
             
@@ -164,7 +164,7 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
 #Función para buscar el producto en Neon, o lo descarga de Go UPC******************************************************
 def obtener_o_crear_producto(barcode: str, db: Session):
     #Buscamos en nuestra base de datos central primero
-    producto_existente = db.query(Product).filter(Product.barcode == barcode).first()
+    producto_existente = db.query(Producto).filter(Producto.barcode == barcode).first()
     
     #Si ya lo conocemos, lo devolvemos inmediatamente sin gastar saldo de API
     if producto_existente:
@@ -184,7 +184,7 @@ def obtener_o_crear_producto(barcode: str, db: Session):
         #Si el producto no está registrado, Go UPC devuelve 404
         if respuesta.status_code == 404:
             print(f"Advertencia: Producto {barcode} no encontrado.")
-            nuevo_producto = Product(
+            nuevo_producto = Producto(
                 barcode=barcode,
                 product_name="Producto Desconocido",
                 category="Sin Categoría",
@@ -196,7 +196,7 @@ def obtener_o_crear_producto(barcode: str, db: Session):
             datos_api = respuesta.json()
             info_producto = datos_api.get("product", {})
             
-            nuevo_producto = Product(
+            nuevo_producto = Producto(
                 barcode=barcode,
                 product_name=info_producto.get("name", "Nombre no disponible"),
                 category=info_producto.get("category", "Sin Categoría"),
@@ -232,8 +232,8 @@ def health_check():
 @app.post("/api/v1/business/register", dependencies=[Depends(verify_api_key)])
 def register_business(datos: RegistroNegocio, db: Session = Depends(get_db)): #Se guarda el json en la variable "datos" con el molde definido en la clase "RegistroNegocio". Además, se inyecta la sesión de la base de datos con "db" para usarla dentro de la función
     try:
-        #Verificar si el correo ya existe haciendo una consulta a la tabla Store buscando el email
-        tienda_existente = db.query(Store).filter(Store.email == datos.email).first()
+        #Verificar si el correo ya existe haciendo una consulta a la tabla Tienda buscando el email
+        tienda_existente = db.query(Tienda).filter(Tienda.email == datos.email).first()
         
         if tienda_existente:
             return {
@@ -243,7 +243,7 @@ def register_business(datos: RegistroNegocio, db: Session = Depends(get_db)): #S
             }
 
         #Si no existe, preparamos el nuevo registro para la base de datos
-        nueva_tienda = Store(
+        nueva_tienda = Tienda(
             owner_name=datos.name,
             email=datos.email,
             city=datos.city,
@@ -283,7 +283,7 @@ def sync_ventas(
     ):
 
     #Validación:Buscar la tienda en la base de datos
-    tienda_existente = db.query(Store).filter(Store.store_id == datos.id_store).first()
+    tienda_existente = db.query(Tienda).filter(Tienda.store_id == datos.id_store).first()
 
     #Si la consulta regresa vacía (None), la tienda no existe
     if not tienda_existente:
@@ -316,23 +316,20 @@ def get_predictions(store_id: int, db: Session = Depends(get_db)):
     # Obtenemos la fecha actual del servidor
     hoy = date.today()
 
-    #Hacemos un JOIN entre Prediction y Product usando el barcode como puente
-    resultados = db.query(Prediction, Product).join(
-        Product, Prediction.barcode == Product.barcode
-    ).filter(
-        Prediction.store_id == store_id,
-        Prediction.objetive_date > hoy  #que la fecha de objetivo sea mayor a la de hoy
+    #Hacemos una consulta a la tabla "prediction_database", gracias a desnormalización realizada en models.py nos evitamos hacer un join
+    resultados = db.query(Prediccion).filter(
+        Prediccion.store_id == store_id,
+        Prediccion.objetive_date > hoy #que la fecha de objetivo sea mayor a la de hoy
     ).all()
 
     respuesta = []
     
-    #"pred" contiene los datos de la predicción, "prod" los datos del producto
-    for pred, prod in resultados:
+    for pred in resultados:
         respuesta.append({
-            "product_name": prod.product_name,
-            "Category": prod.category,
-            "image_url": prod.image_url,
-            "objetive_date": pred.objetive_date.strftime("%Y-%m-%d"), # Convertimos la fecha a texto
+            "product_name": pred.product_name,
+            "Category": pred.category,
+            "image_url": pred.image_url,
+            "objetive_date": pred.objetive_date.strftime("%Y-%m-%d"), #Convertimos la fecha a texto
             "prediction": pred.prediction,
             "percentage_average_deviation": pred.percentage_average_deviation,
             "feature": pred.feature,
@@ -347,15 +344,15 @@ def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db)
     
     #Agrupamos por fecha y suma las cantidades de la base de datos, filtrando por tienda y código de barras.
     resultados = db.query(
-        Sale.date.label("fecha"), 
-        func.sum(Sale.amount).label("total_vendido")
+        Venta.date.label("fecha"), 
+        func.sum(Venta.amount).label("total_vendido")
     ).filter(
-        Sale.store_id == store_id,
-        Sale.barcode == barcode
+        Venta.store_id == store_id,
+        Venta.barcode == barcode
     ).group_by(
-        Sale.date
+        Venta.date
     ).order_by(
-        Sale.date #Las ordenamos cronológicamente
+        Venta.date #Las ordenamos cronológicamente
     ).all()
 
     #Armamos la respuesta en el formato que espera el frontend
