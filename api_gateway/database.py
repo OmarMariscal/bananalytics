@@ -12,7 +12,10 @@ engine = create_engine(DATABASE_URL, echo=True)
 
 #Función para generar las tablas
 def init_db():
-    print("Conectando a Neon y creando tablas...")
+    print("Conectando a Neon y borrando tablas viejas...")
+    Base.metadata.drop_all(bind=engine) #ELiminamos tablas viejas para crearlas de nuevo con las nuevas características
+
+    print("Creando tablas nuevas con la arquitectura actualizada...")
     #traducción de clases de Python a SQL y las ejecuta en Neon
     Base.metadata.create_all(bind=engine)
     print("¡Tablas creadas exitosamente!")

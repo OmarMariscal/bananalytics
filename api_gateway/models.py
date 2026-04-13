@@ -1,59 +1,150 @@
-from sqlalchemy import Column, Integer, String, DECIMAL, TIMESTAMP, DATE, TIME, ForeignKey, Boolean, Float, LargeBinary
-from sqlalchemy.dialects.postgresql import BYTEA
-from sqlalchemy.orm import declarative_base
+"""
+Modelos ORM de SQLAlchemy para BanAnalytics.
 
-Base = declarative_base()
+Tablas mapeadas (esquema del documento de Arquitectura):
+  · stores_database     → Tienda
+  · product_database    → Producto
+  · sales_database      → Venta
+  · prediction_database → Prediccion  (incluye store_id y percentage_average_deviation)
+  · models_database     → ModeloML
 
-class Store(Base):
+Decisiones de diseño:
+  - BigInteger en sale_id y prediction.id por volumen esperado a largo plazo.
+  - ENUM de PostgreSQL para TipoAlerta (integridad sin validación en app).
+  - UniqueConstraint en Prediccion(store_id, barcode, objetive_date).
+  - weather_resume_wmo_code: Integer WMO — coherencia con Open-Meteo en producción.
+  - prediction: Integer — las unidades a vender son siempre enteras.
+  - percentage_average_deviation: Float — variación % para diagnóstico y frontend.
+"""
+
+import enum
+from datetime import datetime
+
+from sqlalchemy import (
+    BigInteger, Boolean, Column, Date, DateTime, Enum,
+    Float, ForeignKey, Index, Integer, LargeBinary,
+    String, Time, UniqueConstraint,
+)
+from sqlalchemy.orm import DeclarativeBase, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class TipoAlerta(str, enum.Enum):
+    superavit = "superavit"
+    deficit   = "deficit"
+    none      = "none"
+
+
+class Tienda(Base):
     __tablename__ = "stores_database"
-    
-    store_id = Column(Integer, primary_key=True, index=True)
-    owner_name = Column(String)
-    email = Column(String, unique=True)
-    city = Column(String)
-    latitude = Column(DECIMAL)
-    longitude = Column(DECIMAL)
-    registration_time = Column(TIMESTAMP)
 
-class Product(Base):
-    __tablename__ = "products_database"
-    
-    barcode = Column(String, primary_key=True, index=True)
-    product_name = Column(String)
-    category = Column(String)
-    image_url = Column(String)
+    store_id          = Column(Integer, primary_key=True, autoincrement=True)
+    owner_name        = Column(String(255), nullable=False)
+    email             = Column(String(255), nullable=False, unique=True)
+    city              = Column(String(100), nullable=False)
+    latitude          = Column(Float, nullable=False)
+    longitude         = Column(Float, nullable=False)
+    registration_time = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-class Sale(Base):
+    ventas       = relationship("Venta",     back_populates="tienda",  lazy="select")
+    predicciones = relationship("Prediccion", back_populates="tienda", lazy="select")
+
+    def __repr__(self) -> str:
+        return f"<Tienda id={self.store_id} ciudad='{self.city}'>"
+
+
+class Producto(Base):
+    __tablename__ = "product_database"
+
+    barcode      = Column(String(50),  primary_key=True)
+    product_name = Column(String(255), nullable=False)
+    category     = Column(String(100))
+    image_url    = Column(String(500))
+
+    ventas       = relationship("Venta",    back_populates="producto", lazy="select")
+    modelo       = relationship("ModeloML", back_populates="producto", uselist=False, lazy="select")
+    predicciones = relationship("Prediccion", back_populates="producto", lazy="select")
+
+    def __repr__(self) -> str:
+        return f"<Producto barcode='{self.barcode}' nombre='{self.product_name}'>"
+
+
+class Venta(Base):
     __tablename__ = "sales_database"
-    
-    sale_id = Column(Integer, primary_key=True, index=True)
-    store_id = Column(Integer, ForeignKey("stores_database.store_id"))
-    barcode = Column(String, ForeignKey("products_database.barcode"))
-    date = Column(DATE)
-    time = Column(TIME)
-    amount = Column(Integer)
-    temperature = Column(DECIMAL)
-    weather_resume = Column(String)
+    __table_args__ = (
+        Index("ix_ventas_barcode_date", "barcode", "date"),
+        Index("ix_ventas_store_date",   "store_id", "date"),
+    )
 
-class Prediction(Base):
+    sale_id                 = Column(BigInteger, primary_key=True, autoincrement=True)
+    store_id                = Column(Integer, ForeignKey("stores_database.store_id"), nullable=False)
+    barcode                 = Column(String(50), ForeignKey("product_database.barcode"), nullable=False)
+    date                    = Column(Date, nullable=False)
+    time                    = Column(Time, nullable=False)
+    amount                  = Column(Integer, nullable=False)
+    temperature             = Column(Float)      # NULL si el cliente estaba offline
+    weather_resume_wmo_code = Column(Integer)    # Código WMO real; NULL si offline
+
+    tienda   = relationship("Tienda",   back_populates="ventas")
+    producto = relationship("Producto", back_populates="ventas")
+
+    def __repr__(self) -> str:
+        return f"<Venta id={self.sale_id} barcode='{self.barcode}' date={self.date}>"
+
+
+class Prediccion(Base):
     __tablename__ = "prediction_database"
-    
-    id_prediction = Column(Integer, primary_key=True, index=True)
-    store_id = Column(Integer, ForeignKey("stores_database.store_id")) 
-    barcode = Column(String, ForeignKey("products_database.barcode"))
-    objetive_date = Column(DATE)
-    prediction = Column(Integer)
-    feature = Column(Boolean)
-    type = Column(String)
-    percentage_average_deviation = Column(Float)
+    __table_args__ = (
+        UniqueConstraint(
+            "store_id", "barcode", "objetive_date",
+            name="uq_prediccion_tienda_producto_fecha",
+        ),
+    )
 
-class Model(Base):
+    id       = Column(BigInteger, primary_key=True, autoincrement=True)
+    store_id = Column(Integer, ForeignKey("stores_database.store_id"), nullable=False, index=True)
+    barcode  = Column(String(50), ForeignKey("product_database.barcode"), nullable=False, index=True)
+
+    # Campos desnormalizados para evitar JOINs en el cliente local
+    product_name = Column(String(255))
+    category     = Column(String(100))
+    image_url    = Column(String(500))
+
+    objetive_date               = Column(Date,    nullable=False)
+    prediction                  = Column(Integer, nullable=False)        # Unidades enteras
+    feature                     = Column(Boolean, default=False, nullable=False)  # es_destacado
+    type                        = Column(Enum(TipoAlerta, name="tipo_alerta"), default=TipoAlerta.none, nullable=False)
+    percentage_average_deviation = Column(Float,   nullable=False)       # Variación % RF-05
+
+    tienda   = relationship("Tienda",   back_populates="predicciones")
+    producto = relationship("Producto", back_populates="predicciones")
+
+    def __repr__(self) -> str:
+        return (
+            f"<Prediccion store={self.store_id} barcode='{self.barcode}' "
+            f"fecha={self.objetive_date} pred={self.prediction}>"
+        )
+
+
+class ModeloML(Base):
     __tablename__ = "models_database"
-    
-    model_id = Column(Integer, primary_key=True, index=True)
-    binary_model = Column(BYTEA) 
-    last_update = Column(TIMESTAMP)
-    total_examples = Column(Integer)
-    last_mse = Column(Float)
-    barcode = Column(String, ForeignKey("products_database.barcode"))
-    type_model = Column(String)
+
+    model_id       = Column(Integer, primary_key=True, autoincrement=True)
+    barcode        = Column(String(50), ForeignKey("product_database.barcode"),
+                            nullable=False, unique=True, index=True)
+    binary_model   = Column(LargeBinary)
+    last_update    = Column(DateTime)
+    total_examples = Column(Integer, default=0)
+    last_mse       = Column(Float)
+    type_model     = Column(String(50), default="SGDRegressor", nullable=False)
+
+    producto = relationship("Producto", back_populates="modelo")
+
+    def __repr__(self) -> str:
+        return (
+            f"<ModeloML barcode='{self.barcode}' "
+            f"ejemplos={self.total_examples} mse={self.last_mse}>"
+        )
