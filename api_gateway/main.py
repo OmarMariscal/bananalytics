@@ -320,7 +320,7 @@ def get_predictions(store_id: int, db: Session = Depends(get_db)):
     resultados = db.query(Prediction, Product).join(
         Product, Prediction.barcode == Product.barcode
     ).filter(
-        Prediction.store_id == store_id
+        Prediction.store_id == store_id,
         Prediction.objetive_date > hoy  #que la fecha de objetivo sea mayor a la de hoy
     ).all()
 
@@ -337,6 +337,34 @@ def get_predictions(store_id: int, db: Session = Depends(get_db)):
             "percentage_average_deviation": pred.percentage_average_deviation,
             "feature": pred.feature,
             "type": pred.type
+        })
+        
+    return respuesta
+
+#Obtener Historial de Ventas de un Producto Específico (Necesita autenticación con API Key)*****************
+@app.get("/api/v1/business/{store_id}/{barcode}", dependencies=[Depends(verify_api_key)])
+def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db)):
+    
+    #Agrupamos por fecha y suma las cantidades de la base de datos, filtrando por tienda y código de barras.
+    resultados = db.query(
+        Sale.date.label("fecha"), 
+        func.sum(Sale.amount).label("total_vendido")
+    ).filter(
+        Sale.store_id == store_id,
+        Sale.barcode == barcode
+    ).group_by(
+        Sale.date
+    ).order_by(
+        Sale.date #Las ordenamos cronológicamente
+    ).all()
+
+    #Armamos la respuesta en el formato que espera el frontend
+    respuesta = []
+    
+    for fila in resultados:
+        respuesta.append({
+            "fecha": fila.fecha.strftime("%Y-%m-%d"),
+            "total_vendido": fila.total_vendido
         })
         
     return respuesta
