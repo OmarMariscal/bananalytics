@@ -9,6 +9,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.cache*
 
 # Variables de entorno y contraseñas
 .env
@@ -38,3 +39,6 @@ dist/
 
 # Archivo cola de paquetes
 missing-items.txt
+
+#Carpetas y Archivos de Prueba
+pruebas/
