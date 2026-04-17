@@ -58,7 +58,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          python -m scripts.data_forge --meses ${{ github.event.inputs.months_forge }}
+          python -m scripts.data_forge --months ${{ github.event.inputs.months_forge }}
 
       # ── 5. Worker principal ────────────────────────────────────────────────
       - name: 🚀 Ejecutar Worker ML
