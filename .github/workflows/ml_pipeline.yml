@@ -1,0 +1,83 @@
+#  BanAnalytics — Worker ML · GitHub Actions
+#
+#  Se ejecuta automáticamente a las 3:00 AM hora de México (CST = UTC-6)
+#  equivalente a las 09:00 UTC (horario estándar).
+#
+#  También puede dispararse manualmente desde la pestaña "Actions"
+#  de GitHub (workflow_dispatch) para pruebas o recuperación manual.
+#
+#  Política de reintentos: el propio main.py implementa 3 intentos con
+#  15 minutos de espera (RF-04). Si los 3 fallan, sys.exit(1) marca
+#  el run como fallido y GitHub envía notificación por email.
+
+name: Worker ML — BanAnalytics
+
+on:
+  schedule:
+    # 09:00 UTC = 03:00 AM CST (UTC-6, horario estándar de México)
+    - cron: "0 9 * * *"
+
+  # Disparo manual para pruebas o recuperación
+  workflow_dispatch:
+    inputs:
+      months_forge:
+        description: "Generar datos sintéticos primero (0 = no, 3/6 = sí con N meses)"
+        required: false
+        default: "0"
+
+jobs:
+  worker:
+    name: Ejecutar Worker Predictivo
+    runs-on: ubuntu-latest
+
+    # Límite conservador: RF-04 exige terminar antes de las 6:00 AM.
+    # 3h = 2× el tiempo máximo del RF (120 min) + margen para 3 reintentos.
+    timeout-minutes: 180
+    defaults:
+          run:
+            working-directory: ./worker_ml
+    steps:
+      #  1. Código 
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      #  2. Python 
+      - name: 🐍 Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      #  3. Dependencias 
+      - name: 📦 Instalar dependencias
+        run: pip install --upgrade pip && pip install -r requirements.txt
+
+      #  4. (Opcional) Data Forge para demos 
+      - name: 🔨 Data Forge (solo si se solicita manualmente)
+        if: ${{ inputs.months_forge != '0' && inputs.months_forge != '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -m scripts.data_forge --meses ${{ github.event.inputs.months_forge }}
+
+      # ── 5. Worker principal ────────────────────────────────────────────────
+      - name: 🚀 Ejecutar Worker ML
+        env:
+          DATABASE_URL:               ${{ secrets.DATABASE_URL }}
+          PREDICTION_DAYS:            ${{ vars.PREDICTION_DAYS || '7' }}
+          DEFICIT_THRESHOULD:             ${{ vars.DEFICIT_THRESHOULD || '-15.0' }}
+          SUPERAVIT_THRESHOULD:           ${{ vars.SUPERAVIT_THRESHOULD || '15.0' }}
+          MIN_EXAMPLES_COLD_START:    ${{ vars.MIN_EXAMPLES_COLD_START || '30' }}
+          TRAINING_WINDOWS_DAYS: ${{ vars.TRAINING_WINDOWS_DAYS || '2' }}
+        run: python main.py
+
+      # ── 6. Resumen ─────────────────────────────────────────────────────────
+      - name: 📊 Resumen del run
+        if: always()
+        working-directory: ./
+        run: |
+          echo "──────────────────────────────────────"
+          echo " Run   : ${{ github.run_number }}"
+          echo " Fecha : $(date -u '+%Y-%m-%d %H:%M UTC')"
+          echo " Estado: ${{ job.status }}"
+          echo "──────────────────────────────────────"
