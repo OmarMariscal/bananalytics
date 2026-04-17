@@ -1,10 +1,10 @@
-from db.connection import crear_tablas, get_session, verificar_conexion
+from db.connection import create_tables, get_session, check_connection
 from db.models import ModeloML, Prediccion, Producto, TipoAlerta, Tienda, Venta
 
 __all__ = [
     "get_session",
-    "verificar_conexion",
-    "crear_tablas",
+    "check_connection",
+    "create_tables",
     "Base",
     "Tienda",
     "Producto",

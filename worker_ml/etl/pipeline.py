@@ -140,3 +140,169 @@ def _df_to_matrix(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     X = np.vstack(rows_X)
     y = df["amount"].values.astype(np.float64)
     return X, y
+
+def _aggregate_raw_sales(rows: list, columns: list[str]) -> pd.DataFrame:
+    """
+    Agrega filas crudas de sales_database a totales diarios por (store, barcode, date).
+
+    weather_resume_wmo_code (Integer WMO) → wmo_to_weather_code() → código interno.
+    Maneja NULLs con valores por defecto seguros.
+    """
+    if not rows:
+        return pd.DataFrame()
+    
+    df = pd.DataFrame(rows, columns=columns)
+    df["date"] = pd.to_datetime(df["date"]).dt.date
+    df["temperature"] = pd.to_numeric(df["temperature"], errors="coerce")
+
+    # Conversión WMO → código interno. NULLs reciben _DEFAULT_WEATHER_CODE.
+    df["weather_code"] = df["weather_resume_wmo_code"].apply(
+        lambda wmo: wmo_to_weather_code(int(wmo)) if wmo is not None else _DEFAULT_WEATHER_CODE
+    )
+
+    daily = (
+        df.groupby(["store_id", "barcode", "date"])
+        .agg(
+            amount=("amount", "sum"),
+            temperature=("temperature", "mean"),
+            weather_code=("weather_code", lambda s: int(s.mode().iloc[0]) if not s.dropna().empty else _DEFAULT_WEATHER_CODE),
+        )
+        .reset_index()
+    )
+
+    global_temp_mean = daily["temperature"].mean()
+    daily["temperature"] = daily["temperature"].fillna(
+        global_temp_mean if not math.isnan(global_temp_mean) else 22.0
+    )
+
+    return daily
+
+# Funciones de Extracción
+def extract_historic_sales(barcode: str) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Extrae TODO el historial de ventas para un barcode (modo Cold Start).
+    """
+    query = text("""
+        SELECT store_id, barcode, date, amount, temperature, weather_resume_wmo_code
+        FROM sales_database
+        WHERE barcode = :barcode
+        ORDER BY date ASC, store_id ASC
+    """)
+    
+    with get_session() as session:
+        result = session.execute(query, {"barcode": barcode})
+        rows = result.fetchall()
+    
+    if not rows:
+        logger.debug(f"  Sin historial para barcode={barcode}")
+        return np.empty((0, N_FEATURES)), np.empty(0)
+    
+    cols = ["store_id", "barcode", "date", "amount", "temperature", "weather_resume_wmo_code"]
+    daily = _aggregate_raw_sales(rows, cols)
+    return _df_to_matrix(daily)
+
+def extract_recently_sales(
+    barcode: str,
+    days: Optional[int] = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Extrae ventas de los últimos N días para entrenamiento incremental.
+    """
+    days = days or _settings.training_window_days
+    cut_off_date = date.today() - timedelta(days=days)
+    
+    query = text("""
+        SELECT store_id, barcode, date, amount, temperature, weather_resume_wmo_code
+        FROM sales_database
+        WHERE barcode = :barcode
+          AND date >= :cut_off_date
+        ORDER BY date ASC, store_id ASC
+    """)
+    
+    with get_session() as session:
+        result = session.execute(query, {"barcode": barcode, "cut_off_date": cut_off_date})
+        rows = result.fetchall()
+        
+    if not rows:
+        return np.empty((0, N_FEATURES)), np.empty(0)
+    
+    cols = ["store_id", "barcode", "date", "amount", "temperature", "weather_resume_wmo_code"]
+    daily = _aggregate_raw_sales(rows, cols)
+    return _df_to_matrix(daily)
+
+def build_features_inference(
+    fecha: date,
+    temperature: float,
+    weather_code: int,
+    store_id: int,
+) -> np.ndarray:
+    """
+    Construye el vector de features para una fecha FUTURA (inferencia).
+    Retorna shape (1, N_FEATURES) listo para model.predict().
+    weather_code ya debe ser el código interno (0-5), no el WMO raw.
+    """
+    vec = _build_feature_vector(
+        fecha=fecha,
+        temperature=temperature,
+        weather_code=weather_code,
+        store_id=store_id,
+    )
+    return vec.reshape(1, -1) 
+
+# Funciones de Consulta
+def get_historical_average(barcode: str, store_id: int) -> float:
+    """
+    Calcula el promedio diario de ventas del último mes para una tienda y producto.
+    Retorna 0.0 si no hay datos (el llamador maneja el caso ZeroDivision).
+    """
+    cut_off_date = date.today() - timedelta(days=30)
+
+    query = text("""
+        SELECT COALESCE(AVG(daily_total), 0.0)
+        FROM (
+            SELECT date, SUM(amount) AS daily_total
+            FROM sales_database
+            WHERE barcode   = :barcode
+              AND store_id  = :store_id
+              AND date      >= :cut_off_date
+            GROUP BY date
+        ) sub
+    """)
+
+    with get_session() as session:
+        result = session.execute(
+            query,
+            {"barcode": barcode, "store_id": store_id, "cut_off_date": cut_off_date},
+        )
+        average = result.scalar()
+
+    return float(average or 0.0)
+
+
+def count_barcode_examples(barcode: str) -> int:
+    """Cuenta registros brutos de venta para detectar Cold Start."""
+    query = text("SELECT COUNT(*) FROM sales_database WHERE barcode = :barcode")
+    with get_session() as session:
+        result = session.execute(query, {"barcode": barcode})
+        return int(result.scalar() or 0)
+
+
+def get_all_barcodes() -> list[str]:
+    """Retorna todos los barcodes con al menos una venta registrada."""
+    query = text("SELECT DISTINCT barcode FROM sales_database ORDER BY barcode")
+    with get_session() as session:
+        result = session.execute(query)
+        return [row[0] for row in result.fetchall()]
+
+
+def get_all_stores() -> list[dict]:
+    """Retorna todas las tiendas con sus coordenadas para el forecast de clima."""
+    query = text(
+        "SELECT store_id, latitude, longitude FROM stores_database ORDER BY store_id"
+    )
+    with get_session() as session:
+        result = session.execute(query)
+        return [
+            {"store_id": row[0], "latitude": row[1], "longitude": row[2]}
+            for row in result.fetchall()
+        ]
