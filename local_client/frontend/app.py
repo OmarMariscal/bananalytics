@@ -1,6 +1,7 @@
 import flet as ft
 from shared.protocols.i_backend_service import BackendProtocol
 from frontend.screens.register_screen import RegisterScreen
+from frontend.app_layout import MainLayout
 
 class App:
     def __init__(self, svc: BackendProtocol, page: ft.Page):
@@ -21,6 +22,7 @@ class App:
         self.stats = self.svc.get_dashboard_stats()
         self.config = self.svc.get_app_stats()
         self.alerts = self.svc.get_alerts()
+        self.layout = MainLayout(self.page, backend_service=self.svc)
         self._show_dashboard()
 
     def _show_register(self):
@@ -34,5 +36,5 @@ class App:
 
     def _show_dashboard(self):
         self.page.clean()
-        self.page.add(ft.Text("Bienvenido al Dashboard"))
+        self.page.add(self.layout) 
         self.page.update()

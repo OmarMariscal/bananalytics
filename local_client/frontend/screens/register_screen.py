@@ -1,6 +1,5 @@
 import flet as ft
 import re
-import time
 from frontend.components.btn_validate import PrimaryButton
 from shared.models.user import User
 
@@ -34,16 +33,17 @@ class RegisterScreen(ft.Column):
             hint_text="e.g., Margarita López",
             border_color="#E0D7C6",
             bgcolor="#FDFBF9",
-            on_change=self.text_validate,
+            on_change=self._text_validate,
             text_size=14,
             height=50,
         )
+
         self.email = ft.TextField(
             label="Correo electronico",
             hint_text="e.g., support@bananalytics.com",
             border_color="#E0D7C6",
             bgcolor="#FDFBF9",
-            on_change=self.email_validate,
+            on_change=self._email_validate,
             text_size=14,
             height=50,
         )
@@ -82,13 +82,14 @@ class RegisterScreen(ft.Column):
             title=ft.Text("¡Registro Exitoso!"),
             content=ft.Text(""),
             bgcolor="#C0843F",
-            actions=[ft.TextButton("Continuar", on_click=self._cerrar_dialogo)],
+            actions=[ft.TextButton("Continuar", on_click=self._close_dialog)],
         )
+        
         self.error_dialog = ft.AlertDialog(
             title=ft.Text("Ha ocurrido algo..."),
             content=ft.Text(""),
             bgcolor="#C0843F",
-            actions=[ft.TextButton("Continuar", on_click=self._cerrar_dialogo)],
+            actions=[ft.TextButton("Continuar", on_click=self._close_dialog)],
         )
 
         white_card = ft.Container(
@@ -172,7 +173,7 @@ class RegisterScreen(ft.Column):
         
         self.page.update()
 
-    def text_validate(self, e):
+    def _text_validate(self, e):
 
         if any(char.isdigit() for char in self.name.value):
             self.error_name.value = "Solo se permiten caracteres"
@@ -184,13 +185,13 @@ class RegisterScreen(ft.Column):
         
         self.page.update()
 
-    def email_validate(self, e):
+    def _email_validate(self, e):
 
         self.error_email.visible = False
         self.email.border_color = ft.Colors.BLACK
         self.page.update()
 
-    def _cerrar_dialogo(self, e):
+    def _close_dialog(self, e):
 
         self.success_dialog.open = False
         self.error_dialog.open = False

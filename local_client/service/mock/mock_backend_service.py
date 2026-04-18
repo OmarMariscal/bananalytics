@@ -77,7 +77,7 @@ class MockBackendService:
         ) 
     
     def is_first_start(self) -> bool:
-        return True
+        return False
     
     def register_user(self, user: User) -> dict:
         return {
