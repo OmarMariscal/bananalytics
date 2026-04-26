@@ -19,8 +19,10 @@ class MainLayout(ft.Container):
             padding=30
         )
 
-        new_dashboard = Dashboard()
-        new_products = Products()
+        new_dashboard = Dashboard(self.backend_service, self.main_page)
+        new_products = Products(self.backend_service)
+
+        self.dynamic_content.content = new_dashboard
 
         self.txt_user_name = ft.Text(f"{self.stats.user_name}", weight="bold", size=20, color="#2D2114")
         self.txt_email = ft.Text(f"{self.stats.email}", size=12, color="#8D7A66")
@@ -119,7 +121,7 @@ class MainLayout(ft.Container):
             padding=10,
             border_radius=10,
             on_hover=lambda e: self._handle_hover(e),
-            on_click=lambda _: self.update_content(destination_view),
+            on_click=lambda _: self._update_content(destination_view),
         )
 
     def _handle_hover(self, e):
@@ -148,10 +150,6 @@ class MainLayout(ft.Container):
         self.user_popup.visible = e.data
         e.control.update()
         self.update()
-
-    def _update_content(self, new_view):
-        self.dynamic_content.content = new_view
-        self.dynamic_content.update()
 
     def _toggle_theme(self, e):
     

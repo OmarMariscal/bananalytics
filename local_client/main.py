@@ -10,4 +10,4 @@ else:
     from service.backend.backend_service import BackendService
     backend_service = BackendService()
 
-ft.app(target=lambda page: App(backend_service, page), assets_dir="assets")
+ft.run(main=lambda page: App(backend_service, page), assets_dir="assets")

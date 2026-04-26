@@ -74,7 +74,7 @@ class MockBackendService:
             avg_weekly_sales=18,
             type="none",
             feature=False,
-        ) 
+        )
     
     def is_first_start(self) -> bool:
         return False
@@ -85,7 +85,7 @@ class MockBackendService:
             'message': 'El correo a sido registrado'
         }
 
-    def get_sales_history(self) -> list[dict]:
+    def get_sales_history(self, barcode: str) -> list[dict]:
         return [{"fecha": "2026-03-19", "total_vendido": 5}, {"fecha": "2026-03-19", "total_vendido": 8}]
     
     def get_app_stats(self) -> ConfigStats:
@@ -97,4 +97,4 @@ class MockBackendService:
         )
         
     def get_server_status(self) -> bool:
-        return True
+        return False
