@@ -12,11 +12,11 @@ class MainLayout(ft.Container):
         self.backend_service = backend_service
         self.stats = self.backend_service.get_app_stats()
         self.expand = True
-        self.bgcolor = "#F9F7F2"
+        self.bgcolor = "transparent"
 
         self.dynamic_content = ft.Container(
             expand=True,
-            padding=30
+            padding=0
         )
 
         new_dashboard = Dashboard(self.backend_service, self.main_page)
@@ -24,10 +24,10 @@ class MainLayout(ft.Container):
 
         self.dynamic_content.content = new_dashboard
 
-        self.txt_user_name = ft.Text(f"{self.stats.user_name}", weight="bold", size=20, color="#2D2114")
+        self.txt_user_name = ft.Text(f"{self.stats.user_name}", weight="bold", size=20, color=ft.colors.ON_SURFACE)
         self.txt_email = ft.Text(f"{self.stats.email}", size=12, color="#8D7A66")
-        self.txt_theme_title = ft.Text("Cambiar tema", expand=True, weight="bold", size=14, color="#2D2114")
-        self.txt_support_title = ft.Text("Contacto y soporte", size=14, weight="w500", color="#2D2114")
+        self.txt_theme_title = ft.Text("Cambiar tema", expand=True, weight="bold", size=14, color=ft.colors.ON_SURFACE)
+        self.txt_support_title = ft.Text("Contacto y soporte", size=14, weight="w500", color=ft.colors.ON_SURFACE)
 
         self.user_popup = ft.Container(
             content=ft.Column([
@@ -53,10 +53,10 @@ class MainLayout(ft.Container):
             ], tight=True, spacing=10),
             padding=20,
             width=300,
-            bgcolor="#F9F7F2",
+            bgcolor=ft.colors.BACKGROUND,
             border_radius=15,
             border=ft.border.all(1, "#E0E0E0"),
-            shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.with_opacity(0.2, "black")),
+            shadow=ft.BoxShadow(blur_radius=15, color=ft.colors.with_opacity(0.2, "black")),
             visible=False,
             left=60,
             top=150,
@@ -125,7 +125,8 @@ class MainLayout(ft.Container):
         )
 
     def _handle_hover(self, e):
-        e.control.bgcolor = "#3d2e1d" if e.data else "transparent"
+        
+        e.control.bgcolor = "#3d2e1d" if e.data == "true" else "transparent"
         e.control.update()
 
     
@@ -138,9 +139,9 @@ class MainLayout(ft.Container):
         )
 
     def _handle_user_hover(self, e):
-
-        e.control.bgcolor = "#3d2e1d" if e.data else "transparent"
-        self.user_popup.visible = e.data
+        is_hovered = e.data == "true"
+        e.control.bgcolor = "#3d2e1d" if is_hovered else "transparent"
+        self.user_popup.visible = is_hovered
         
         e.control.update()
         self.update()
@@ -152,24 +153,11 @@ class MainLayout(ft.Container):
         self.update()
 
     def _toggle_theme(self, e):
-    
         if e.control.value:
-            self.main_page.theme_mode = ft.ThemeMode.LIGHT
-            bg_color = "#F9F7F2"
-            text_color = "#2D2114"
+            self.page.theme_mode = ft.ThemeMode.LIGHT
         else:
-            self.main_page.theme_mode = ft.ThemeMode.DARK
-            bg_color = "#1E1E1E"
-            text_color = "#F9F7F2"
-
-        self.bgcolor = bg_color
-        self.user_popup.bgcolor = bg_color
-
-        self.txt_user_name.color = text_color
-        self.txt_theme_title.color = text_color
-        self.txt_support_title.color = text_color
-
-        self.update()
-        self.main_page.update()
+            self.page.theme_mode = ft.ThemeMode.DARK
+            
+        self.page.update()
 
     

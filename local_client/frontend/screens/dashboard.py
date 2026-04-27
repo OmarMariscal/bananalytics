@@ -4,14 +4,13 @@ from datetime import datetime
 from frontend.components.product_details import ProductDetailDialog
 
 class Dashboard(ft.Container):
-    def __init__(self, backend_service, page):  # ← Agregar page
+    def __init__(self, backend_service, page):
         super().__init__()
         self.main_page = page
         self.backend_service = backend_service
         self.expand = True
         self.padding = 0
 
-        # Obtenemos los datos del backend
         self.list_alerts = self.backend_service.get_alerts()
         now = datetime.now()
         self.date = now.strftime("%A, %B %d, %Y")
@@ -20,30 +19,26 @@ class Dashboard(ft.Container):
         self.server_status_text = "#2E7D32" if self.server_status else "#C85050"
         self.server_status = "● Online" if self.server_status else "● Offline"
 
-        # Estructura principal: Fila con dos grandes columnas
         self.content = ft.Row(
             controls=[
-                # --- SECCIÓN IZQUIERDA (Estadísticas y Gráficas) ---
                 self._build_left_section(),
-
-                # --- SECCIÓN DERECHA (Product Intelligence) ---
                 self._build_right_section()
             ],
             expand=True,
-            spacing=0 # Sin espacio para que el panel derecho se pegue al borde
+            spacing=0
         )
 
     def _build_left_section(self):
-        """Construye la parte izquierda del dashboard (Estadísticas principales)"""
         return ft.Container(
-            expand=3, # Ocupa 3 partes del ancho total
+            expand=3,
             padding=30,
+            bgcolor=ft.colors.BACKGROUND,
             content=ft.Column(
                 controls=[
                     # Encabezado
                     ft.Row([
                         ft.Column([
-                            ft.Text("Global Product Status", size=24, weight="bold", color="#2D2114"),
+                            ft.Text("Global Product Status", size=24, weight="bold", color=ft.colors.ON_SURFACE),
                             ft.Text(self.date, size=14, color="#8D7A66"),
                         ], spacing=2),
                         ft.Container(
@@ -55,23 +50,24 @@ class Dashboard(ft.Container):
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     
                     ft.Divider(height=20, color="transparent"),
-                    
-                    # Fila de tarjetas de estadísticas (Ejemplo visual)
+
                     ft.Row([
-                        self._stat_card("Total Scans Today", "1,247", "/icon_scaner.png", "#FDF3E7", "#C38441"),
-                        self._stat_card("Active Predictions", "23", "/icon_spyco.png", "#E8FCE8", "#2E7D32"),
-                        self._stat_card("Pending Offline Syncs", "8", "/icon_sky.png", "#FDF3E7", "#C38441"),
+                        self._stat_card("Total Scans Today", "1,247", "/icon_scaner.png", "#FDF3E7"),
+                        self._stat_card("Active Predictions", "23", "/icon_spyco.png", "#E8FCE8"),
+                        self._stat_card("Pending Offline Syncs", "8", "/icon_sky.png", "#FDF3E7"),
                     ], spacing=20),
                     
-                    # Aquí iría tu gráfica en el futuro
                     ft.Container(
                         expand=True,
-                        bgcolor="white",
+                        bgcolor=ft.colors.SURFACE_VARIANT,
                         border_radius=15,
                         border=ft.border.all(1, "#E0E0E0"),
                         margin=ft.margin.only(top=20),
                         padding=20,
-                        content=ft.Text("Sales Predictions vs Actuals (Gráfica aquí)", color="#8D7A66")
+                        content=ft.Column([
+                            ft.Text("Sales Predictions vs Actuals (Gráfica aquí)", color="#8D7A66"),
+                            self._build_deviation_chart()
+                        ], alignment=ft.MainAxisAlignment.CENTER)
                     )
                 ],
                 expand=True
@@ -79,25 +75,22 @@ class Dashboard(ft.Container):
         )
 
     def _build_right_section(self):
-        """Construye el panel derecho dinámico de alertas de productos"""
-        
-        # Generamos la lista de tarjetas iterando sobre los datos del backend
+
         alert_cards = []
         for alert in self.list_alerts:
             alert_cards.append(self._create_alert_card(alert))
 
         return ft.Container(
-            expand=1, # Ocupa 1 parte del ancho total
-            bgcolor="#FDFBFA", # Un color ligeramente distinto para diferenciar el panel
+            expand=1,
+            bgcolor=ft.colors.BACKGROUND,
             border=ft.border.only(left=ft.BorderSide(1, "#E0E0E0")),
             padding=20,
             content=ft.Column(
                 controls=[
-                    ft.Text("Product Intelligence", size=18, weight="bold", color="#2D2114"),
+                    ft.Text("Product Intelligence", size=18, weight="bold", color=ft.colors.ON_SURFACE),
                     ft.Text("AI-powered demand predictions", size=12, color="#8D7A66"),
                     ft.Divider(height=20, color="transparent"),
                     
-                    # ListView hace que la lista sea scrolleable si hay muchos productos
                     ft.ListView(
                         controls=alert_cards,
                         spacing=15,
@@ -109,26 +102,24 @@ class Dashboard(ft.Container):
         )
 
     def _create_alert_card(self, alert):
-        # ... (Tu lógica de badge se mantiene igual) ...
 
         def on_hover(e):
-            if e.data == "true":  # Mouse entra
+            if e.data == "true":
                 e.control.scale = 1.08
-                e.control.bgcolor = "#FFFBF8"  # Color más cálido
+                e.control.bgcolor = ft.colors.OUTLINE
             else:  # Mouse sale
                 e.control.scale = 1.0
-                e.control.bgcolor = "white"
+                e.control.bgcolor = ft.colors.SURFACE_VARIANT
             
             e.control.update()
 
         def open_details(e):
-            # Importante: usamos self.page que Flet asigna automáticamente al control
+            
             dialog = ProductDetailDialog(alert, self.page, self.backend_service)
             self.page.overlay.append(dialog)
             dialog.open = True
             self.main_page.update()
 
-        # Lógica de colores del badge (resumida para el ejemplo)
         if alert.type == "deficit":
             badge_bg, badge_color, badge_text = "#FCE8E8", "#D32F2F", f"Deficit: {alert.prediction} units"
         elif alert.type == "superavit":
@@ -137,16 +128,13 @@ class Dashboard(ft.Container):
             badge_bg, badge_color, badge_text = "#F0EFE9", "#8D7A66", "Stable"
 
         return ft.Container(
-            bgcolor="white",
+            bgcolor=ft.colors.SURFACE_VARIANT,
             border_radius=15,
             padding=15,
             border=ft.border.all(1, "#E0E0E0"),
             
-            # --- ANIMACIÓN ---
-            # Usamos la sintaxis que admite tu versión
             animate_scale=ft.Animation(300, ft.AnimationCurve.DECELERATE),
             
-            # --- EVENTOS ---
             on_hover=on_hover,
             on_click=open_details,
             
@@ -164,7 +152,7 @@ class Dashboard(ft.Container):
                     ),
                     ft.Column(
                         controls=[
-                            ft.Text(alert.product_name, weight="bold", size=14, color="#2D2114"),
+                            ft.Text(alert.product_name, weight="bold", size=14, color=ft.colors.ON_SURFACE),
                             ft.Row([
                                 ft.Image("/icon_calendar.png", width=12),
                                 ft.Text(alert.objective_date.strftime("%b %d, %Y"), size=11, color="#8D7A66")
@@ -184,18 +172,18 @@ class Dashboard(ft.Container):
             )
         )
 
-    def _stat_card(self, title, value, icon, icon_bg, icon_color):
+    def _stat_card(self, title, value, icon, icon_bg):
         """Función auxiliar para crear las tarjetas pequeñas de estadísticas de la izquierda"""
         return ft.Container(
             expand=1,
-            bgcolor="white",
+            bgcolor=ft.colors.SURFACE_VARIANT,
             border_radius=15,
             padding=20,
             border=ft.border.all(1, "#E0E0E0"),
             content=ft.Row([
                 ft.Column([
                     ft.Text(title, size=14, color="#8D7A66"),
-                    ft.Text(value, size=24, weight="bold", color="#2D2114"),
+                    ft.Text(value, size=24, weight="bold", color=ft.colors.ON_SURFACE),
                 ], spacing=5, expand=True),
                 ft.Container(
                     content=ft.Image(src=icon, width=60, fit="contain"),
@@ -205,3 +193,79 @@ class Dashboard(ft.Container):
                 )
             ])
         )
+    
+    def _build_deviation_chart(self):
+        deviation_data = []
+        for p in self.list_alerts:
+            if p.avg_weekly_sales > 0:
+                dev = round(((p.prediction - p.avg_weekly_sales) / p.avg_weekly_sales) * 100, 2)
+                deviation_data.append({
+                    "name": p.product_name,
+                    "dev": dev,
+                    "abs_dev": abs(dev)
+                })
+
+        top_deviations = sorted(deviation_data, key=lambda x: x["abs_dev"], reverse=True)[:25]
+        num_items = len(top_deviations)
+        dynamic_width = 40 if num_items < 5 else 25 if num_items < 15 else 15
+
+        bar_groups = []
+        for i, item in enumerate(top_deviations):
+            bar_color = "#2E7D32" if item["dev"] >= 0 else "#D32F2F"
+            
+            bar_groups.append(
+                ft.BarChartGroup(
+                    x=i,
+                    bar_rods=[
+                        ft.BarChartRod(
+                            from_y=0,
+                            to_y=item["dev"],
+                            width=dynamic_width,
+                            color=bar_color,
+                            border_radius=5,
+                        )
+                    ],
+                )
+            )
+
+        max_abs_val = max([x["abs_dev"] for x in top_deviations]) if top_deviations else 100
+        y_limit = int(max_abs_val * 1.2)
+
+        chart = ft.BarChart(
+            bar_groups=bar_groups,
+            border=ft.border.all(1, "#F0EFE9"),
+            interactive=True,
+            groups_space=None, 
+
+            tooltip_bgcolor=ft.colors.with_opacity(0.95, "#F9F7F2"),
+            horizontal_grid_lines=ft.ChartGridLines(
+                color=ft.colors.with_opacity(0.2, "#8D7A66"), 
+                width=0.5,
+                interval=10,
+            ),
+            left_axis=ft.ChartAxis(
+                labels=[
+                    ft.ChartAxisLabel(value=-y_limit, label=ft.Text(f"-{y_limit}%", size=10, color="#8D7A66")),
+                    ft.ChartAxisLabel(value=0, label=ft.Text("0%", size=10, weight="bold", color="#8D7A66")),
+                    ft.ChartAxisLabel(value=y_limit, label=ft.Text(f"{y_limit}%", size=10, color="#8D7A66")),
+                ],
+                labels_size=40,
+            ),
+            bottom_axis=ft.ChartAxis(
+                labels=[
+                    ft.ChartAxisLabel(
+                        value=i, 
+                        label=ft.Container(
+                            content=ft.Text(item["name"][:10], size=10, color="#8D7A66"),
+                            rotate=ft.Rotate(angle=-1.1), 
+                            padding=ft.padding.only(top=10)
+                        )
+                    ) for i, item in enumerate(top_deviations)
+                ],
+                labels_size=60,
+            ),
+            max_y=y_limit,
+            min_y=-y_limit,
+            expand=True,
+        )
+        return chart

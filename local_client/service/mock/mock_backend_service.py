@@ -86,7 +86,7 @@ class MockBackendService:
         }
 
     def get_sales_history(self, barcode: str) -> list[dict]:
-        return [{"fecha": "2026-03-19", "total_vendido": 5}, {"fecha": "2026-03-19", "total_vendido": 8}]
+        return [{"date": "2026-03-19", "volume": 15}, {"date": "2026-03-20", "volume": 50}, {"date": "2026-03-21", "volume": 20}]
     
     def get_app_stats(self) -> ConfigStats:
         return ConfigStats(

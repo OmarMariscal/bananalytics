@@ -17,7 +17,7 @@ print(f"   Ejecutable: {sys.executable}")
 
 # 2. Verificar versión de Flet
 print(f"\n2. FLET:")
-print(f"   Versión: {ft.__version__}")
+#print(f"   Versión: {ft.__version__}")
 print(f"   Ubicación: {ft.__file__}")
 
 # 3. Verificar atributos disponibles
