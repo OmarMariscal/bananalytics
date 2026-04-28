@@ -52,7 +52,91 @@ class MockBackendService:
                 avg_weekly_sales=18,
                 type="none",
                 feature=False,
-            ),          
+            ),   
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ), 
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ), 
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ), 
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ), 
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ), 
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ), 
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ),        
         ]
 
     def get_dashboard_stats(self) -> dict:

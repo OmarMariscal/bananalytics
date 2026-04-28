@@ -84,7 +84,7 @@ class Dashboard(ft.Container):
             expand=1,
             bgcolor=ft.colors.BACKGROUND,
             border=ft.border.only(left=ft.BorderSide(1, "#E0E0E0")),
-            padding=20,
+            padding=10,
             content=ft.Column(
                 controls=[
                     ft.Text("Product Intelligence", size=18, weight="bold", color=ft.colors.ON_SURFACE),
@@ -131,6 +131,7 @@ class Dashboard(ft.Container):
             bgcolor=ft.colors.SURFACE_VARIANT,
             border_radius=15,
             padding=15,
+            margin=ft.margin.only(left=15, right=15),
             border=ft.border.all(1, "#E0E0E0"),
             
             animate_scale=ft.Animation(300, ft.AnimationCurve.DECELERATE),

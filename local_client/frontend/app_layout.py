@@ -16,11 +16,11 @@ class MainLayout(ft.Container):
 
         self.dynamic_content = ft.Container(
             expand=True,
-            padding=0
+            padding=0,
         )
 
         new_dashboard = Dashboard(self.backend_service, self.main_page)
-        new_products = Products(self.backend_service)
+        new_products = Products(self.backend_service, self.main_page)
 
         self.dynamic_content.content = new_dashboard
 
