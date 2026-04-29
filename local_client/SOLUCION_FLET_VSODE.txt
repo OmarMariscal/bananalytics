@@ -1,0 +1,151 @@
+SOLUCIÓN DE PROBLEMAS: FLET NO RECONOCE ATRIBUTOS EN VS CODE
+=============================================================
+
+PASO 1: DIAGNOSTICAR EL PROBLEMA
+================================
+
+1. Abre tu terminal en VS Code
+2. Asegúrate que estés EN EL VENV (debe mostrar "venv" al inicio de la línea)
+3. Ejecuta el script diagnostico_flet.py:
+
+   python diagnostico_flet.py
+
+4. Analiza los resultados - especialmente:
+   - ¿Dice que ft.icons existe?
+   - ¿Dice que ft.LineChartDataPoint existe?
+   - ¿Tiene archivos .pyi?
+
+
+PASO 2: PROBLEMA COMÚN #1 - VS CODE APUNTA AL PYTHON EQUIVOCADO
+==============================================================
+
+Es el 90% de los casos. VS Code está usando Python GLOBAL en lugar del venv.
+
+SOLUCIÓN:
+
+1. Abre la Paleta de Comandos: Ctrl+Shift+P
+2. Escribe: "Python: Select Interpreter"
+3. Elige la opción que diga "./venv/Scripts/python" o "./venv/bin/python"
+   (depende si usas Windows o Linux/Mac)
+
+4. Verifica que ahora VS Code muestre el venv en la esquina inferior derecha
+
+5. Recarga VS Code: Ctrl+Shift+P > "Developer: Reload Window"
+
+
+PASO 3: PROBLEMA COMÚN #2 - CACHÉ DE PYTHON CORRUPTA
+=====================================================
+
+A veces Python genera archivos __pycache__ corruptos.
+
+SOLUCIÓN (Windows):
+
+1. En VS Code terminal, asegúrate de estar en la raíz del proyecto
+2. Ejecuta estos comandos:
+
+   rmdir /s __pycache__
+   rmdir /s venv
+   python -m venv venv
+   venv\Scripts\activate
+   pip install flet==0.83.1
+
+3. Luego: Ctrl+Shift+P > "Python: Select Interpreter" > elige el nuevo venv
+
+SOLUCIÓN (Linux/Mac):
+
+1. En terminal:
+
+   rm -rf __pycache__
+   rm -rf venv
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install flet==0.83.1
+
+
+PASO 4: PROBLEMA COMÚN #3 - ACTUALIZAR FLET
+============================================
+
+Si tienes una versión antigua, los type hints pueden ser incompletos.
+
+En terminal (con venv activo):
+
+   pip install --upgrade flet
+   pip install --upgrade flet-core
+
+
+PASO 5: PROBLEMA COMÚN #4 - CONFIGURAR PYLANCE
+===============================================
+
+VS Code usa Pylance para el intellisense. A veces necesita configuración.
+
+1. Abre: Archivo > Preferencias > Configuración (Ctrl+,)
+2. Busca: "pylance"
+3. Encuentra: "Pylance: Type Checking Mode"
+4. Cambia de "off" a "basic" o "strict"
+
+5. Busca: "python.defaultInterpreterPath"
+6. Establece: "./venv/Scripts/python" (Windows) o "./venv/bin/python" (Linux/Mac)
+
+
+PASO 6: SOLUCIÓN NUCLEAR (SI NADA FUNCIONA)
+===========================================
+
+1. Desinstala VS Code (NO borra la carpeta del proyecto)
+2. Reinstala VS Code
+3. Abre tu proyecto
+4. Sigue PASO 2 nuevamente
+5. Instala Python Extension de Microsoft
+
+
+VERIFICACIÓN FINAL
+==================
+
+Si todo funciona, deberías poder hacer esto sin errores de tipo:
+
+   import flet as ft
+   
+   # Esto debería mostrar sugerencias de autocomplete
+   icon = ft.icons.  # <-- Aquí debería aparecer la lista de iconos
+   
+   # Esto también debería funcionar
+   chart = ft.LineChart(data_series=[])
+
+
+ARCHIVOS AUXILIARES
+===================
+
+diagnostico_flet.py   → Script para testear tu instalación
+requirements.txt      → Archivo para congelar versiones (ver abajo)
+
+
+BONUS: CONGELAR VERSIONES CORRECTAMENTE
+========================================
+
+Crea un archivo "requirements.txt" en tu proyecto:
+
+   flet==0.83.1
+   flet-core==0.83.1
+
+Luego instala desde este archivo:
+
+   pip install -r requirements.txt
+
+Y para actualizar el archivo si cambias versiones:
+
+   pip freeze > requirements.txt
+
+
+AYUDA RÁPIDA
+============
+
+Si después de todo esto sigues sin que funcione:
+
+1. Verifica el OUTPUT de diagnóstico_flet.py
+2. Comparte qué atributos SÍ se encuentran y cuáles NO
+3. Verifica en terminal que realmente Flet está instalado:
+
+   python -c "import flet as ft; print(ft.__version__); print(hasattr(ft, 'LineChart'))"
+
+4. Si el script dice que TODO está bien pero VS Code sigue mostrando errores,
+   es ÚNICAMENTE un problema de Intellisense (no afecta la ejecución).
+   En ese caso, solo ignora los errores rojos y ejecuta el código.

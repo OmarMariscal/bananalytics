@@ -52,7 +52,91 @@ class MockBackendService:
                 avg_weekly_sales=18,
                 type="none",
                 feature=False,
-            ),          
+            ),   
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ), 
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ), 
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ), 
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ), 
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ), 
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ), 
+
+            PredictionAlert(
+                product_name="Doritos",
+                barcode="7741500152056",
+                category="Galletas",
+                image_url="https://farmaciacalderon.com/cdn/shop/products/705419014010_1200x1200.png?v=1605548643",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=18,
+                type="none",
+                feature=False,
+            ),        
         ]
 
     def get_dashboard_stats(self) -> dict:
@@ -74,19 +158,19 @@ class MockBackendService:
             avg_weekly_sales=18,
             type="none",
             feature=False,
-        ) 
+        )
     
     def is_first_start(self) -> bool:
         return False
     
     def register_user(self, user: User) -> dict:
         return {
-            'status': False,
-            'message': 'El correo ya está registrado en la base de datos'
+            'status': True,
+            'message': 'El correo a sido registrado'
         }
 
-    def get_sales_history(self) -> list[dict]:
-        return [{"fecha": "2026-03-19", "total_vendido": 5}, {"fecha": "2026-03-19", "total_vendido": 8}]
+    def get_sales_history(self, barcode: str) -> list[dict]:
+        return [{"date": "2026-03-19", "volume": 15}, {"date": "2026-03-20", "volume": 50}, {"date": "2026-03-21", "volume": 20}]
     
     def get_app_stats(self) -> ConfigStats:
         return ConfigStats(
@@ -97,4 +181,4 @@ class MockBackendService:
         )
         
     def get_server_status(self) -> bool:
-        return True
+        return False
