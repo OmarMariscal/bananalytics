@@ -76,7 +76,8 @@ class MainLayout(ft.Container):
                                 width=30,
                                 fit="contain"
                             ),
-                            bgcolor="#C38441",
+                            bgcolor="#61492D",
+                            border=ft.border.all(1, "#A78E73"),
                             border_radius=8,
                             padding=ft.padding.all(8),
                             width=45,
