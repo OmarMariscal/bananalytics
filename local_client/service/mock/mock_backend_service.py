@@ -138,6 +138,32 @@ class MockBackendService:
                 feature=False,
             ),        
         ]
+    
+    def get_alerts_prob(self) -> list[PredictionAlert]:
+        return [
+            PredictionAlert(
+                product_name="Premium Cola",
+                barcode="7501000123456",
+                category="Bebidas",
+                image_url="https://www.coca-cola.com/content/dam/onexp/co/es/brands/coca-cola/coca-cola-original/ccso_600ml_750x750.png",
+                objective_date=date(2026, 4, 10),
+                prediction=25,
+                avg_weekly_sales=22.0,
+                type="deficit",
+                feature=True,
+            ),
+            
+            PredictionAlert(
+                product_name="Gansito",
+                barcode="7501000152056",
+                category="Postre",
+                image_url="https://ayala-amaya-online.myshopify.com/cdn/shop/products/GANSITO50GR_dc4d79db-ad9c-443e-a4ea-70a2456d11fe_300x300.png?v=1595429786",
+                objective_date=date(2026, 4, 10),
+                prediction=17,
+                avg_weekly_sales=25.0,
+                type="superavit",
+                feature=True,
+            ),]
 
     def get_dashboard_stats(self) -> dict:
         return {
@@ -181,4 +207,7 @@ class MockBackendService:
         )
         
     def get_server_status(self) -> bool:
-        return False
+        return True
+    
+    def sync(self) -> bool:
+        return True
