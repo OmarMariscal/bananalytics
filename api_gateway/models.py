@@ -1,4 +1,5 @@
 """
+
 Modelos ORM de SQLAlchemy para BanAnalytics.
 
 Tablas mapeadas (esquema del documento de Arquitectura):
@@ -11,10 +12,11 @@ Tablas mapeadas (esquema del documento de Arquitectura):
 Decisiones de diseño:
   - BigInteger en sale_id y prediction.id por volumen esperado a largo plazo.
   - ENUM de PostgreSQL para TipoAlerta (integridad sin validación en app).
-  - UniqueConstraint en Prediccion(store_id, barcode, objetive_date).
+  - UniqueConstraint en Prediccion(store_id, barcode, objective_date).
   - weather_resume_wmo_code: Integer WMO — coherencia con Open-Meteo en producción.
   - prediction: Integer — las unidades a vender son siempre enteras.
   - percentage_average_deviation: Float — variación % para diagnóstico y frontend.
+
 """
 
 import enum
@@ -99,7 +101,7 @@ class Prediccion(Base):
     __tablename__ = "prediction_database"
     __table_args__ = (
         UniqueConstraint(
-            "store_id", "barcode", "objetive_date",
+            "store_id", "barcode", "objective_date",
             name="uq_prediccion_tienda_producto_fecha",
         ),
     )
@@ -125,7 +127,7 @@ class Prediccion(Base):
     def __repr__(self) -> str:
         return (
             f"<Prediccion store={self.store_id} barcode='{self.barcode}' "
-            f"fecha={self.objetive_date} pred={self.prediction}>"
+            f"fecha={self.objective_date} pred={self.prediction}>"
         )
 
 
