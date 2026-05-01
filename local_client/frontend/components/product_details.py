@@ -78,11 +78,11 @@ class ProductDetailDialog(ft.AlertDialog):
                                 self._build_status_indicators(self.alert.type),
                                 ft.Divider(height=20, color="transparent"),
                                 ft.Row(
-                                    [self._stat_box("Avg Weekly Sales", f"{self.alert.avg_weekly_sales}"),
-                                    self._stat_box("Expected Weekly Sales", f"{self.alert.prediction}"),], 
+                                    [self._stat_box("Promedio de Ventas Semanales", f"{self.alert.avg_weekly_sales}", "", 260),
+                                    self._stat_box("Predicciones de Ventas", f"{self.alert.prediction}", f"Para el: {self.alert.objective_date}", 210),], 
                                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                                 spacing=0,
-                                width=450
+                                width=500
                                 )],
                                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                             )],
@@ -96,7 +96,7 @@ class ProductDetailDialog(ft.AlertDialog):
                         margin=20,
                         padding=20,
                         content=ft.Column([
-                            ft.Text("Previous Sales History", size=20, weight="bold", color=ft.colors.ON_SURFACE),
+                            ft.Text("Gráfica Histórica de Ventas", size=20, weight="bold", color=ft.colors.ON_SURFACE),
                             self._build_sales_chart()
                         ])
                     )], 
@@ -114,18 +114,21 @@ class ProductDetailDialog(ft.AlertDialog):
         if current_type == "superavit":
             color="#2E7D32" 
             back_color="#E8FCE8"
+            status="superávit"
         elif current_type == "deficit":
             color="#D32F2F"
             back_color="#FCE8E8"
+            status="déficit"
         else:
             color="#6C757D"
             back_color="#E2E3E5"
+            status="estable"
 
         return ft.Column([
             ft.Row([
-                self._status_circle("Deficit", "#F8D7DA", "#D32F2F", current_type == "deficit"),
-                self._status_circle("Surplus", "#D4EDDA", "#2E7D32", current_type == "superavit"),
-                self._status_circle("Neutral", "#E2E3E5", "#6C757D", current_type == "none"),
+                self._status_circle("Déficit", "#FA9EA6", "#D32F2F", current_type == "deficit"),
+                self._status_circle("Superávit", "#8FFFA9", "#2E7D32", current_type == "superavit"),
+                self._status_circle("Estable", "#989999", "#6C757D", current_type == "none"),
             ], 
             alignment=ft.MainAxisAlignment.CENTER,
             spacing=20
@@ -134,7 +137,7 @@ class ProductDetailDialog(ft.AlertDialog):
             ft.Row([
                 ft.Text("Estatus:", size=15, weight="bold", color="#8D7A66"),
                 ft.Container(
-                    content=ft.Text(current_type.upper(), size=12, weight="bold", color=color),
+                    content=ft.Text(status.upper(), size=12, weight="bold", color=color),
                     bgcolor=back_color,
                     padding=ft.padding.symmetric(horizontal=15, vertical=5),
                     border_radius=8,
@@ -162,12 +165,12 @@ class ProductDetailDialog(ft.AlertDialog):
                 ) if active else None,
                 shadow=ft.BoxShadow(blur_radius=10, color=color, spread_radius=1)
             ),
-            ft.Text(label, size=10, color="#8D7A66")
+            ft.Text(label, size=15, color="#8D7A66")
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5)
 
-    def _stat_box(self, title, value):
+    def _stat_box(self, title, value, text, wight):
         return ft.Container(
-            width=200,
+            width=wight,
             bgcolor=ft.colors.ON_SURFACE_VARIANT,
             padding=20,
             border_radius=15,
@@ -178,7 +181,7 @@ class ProductDetailDialog(ft.AlertDialog):
                 ], spacing=8),
                 ft.Column([
                     ft.Text(value, size=32, weight="bold", color=ft.colors.ON_SURFACE),
-                    ft.Text("unidades", size=14, color="#8D7A66"),
+                    ft.Text(text, size=14, color="#8D7A66"),
                 ], alignment=ft.MainAxisAlignment.START, spacing=5)
             ], spacing=5),
             border=ft.border.all(1, "#F5E6D3")
