@@ -360,8 +360,8 @@ def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db)
     
     for fila in resultados:
         respuesta.append({
-            "fecha": fila.fecha.strftime("%Y-%m-%d"),
-            "total_vendido": fila.total_vendido
+            "date": fila.fecha.strftime("%Y-%m-%d"),
+            "volume": fila.total_vendido
         })
         
     return {"history": respuesta}
