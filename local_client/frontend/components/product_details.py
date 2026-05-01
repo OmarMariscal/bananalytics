@@ -128,7 +128,7 @@ class ProductDetailDialog(ft.AlertDialog):
             ft.Row([
                 self._status_circle("Déficit", "#FA9EA6", "#D32F2F", current_type == "deficit"),
                 self._status_circle("Superávit", "#8FFFA9", "#2E7D32", current_type == "superavit"),
-                self._status_circle("Estable", "#989999", "#6C757D", current_type == "none"),
+                self._status_circle("Estable", "#A7AAAA", "#6C757D", current_type == "none"),
             ], 
             alignment=ft.MainAxisAlignment.CENTER,
             spacing=20
@@ -154,7 +154,7 @@ class ProductDetailDialog(ft.AlertDialog):
     def _status_circle(self, label, color, color_center, active):
         return ft.Column([
             ft.Container(
-                width=45, height=45,
+                width=60, height=60,
                 bgcolor=color,
                 shape=ft.BoxShape.CIRCLE,
                 border=ft.border.all(3, color if active else "transparent"),
