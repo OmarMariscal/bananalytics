@@ -188,11 +188,7 @@ class BackendService: #Activa todas las herramientas, si no es primer inicio, ar
     def register_user(self, user: User) -> dict:
         """
         Flujo de onboarding de nueva sucursal.
-        Aplica el Regex, registra en la nube y libera al Daemon
         """
-        #Validar antes de ir a la red
-        if not Validators.es_correo_valido(user.email):
-            return {"status": "fail", "message": "El formato del correo es invalido."}
         respuesta_api = self.api.register_user(user)
 
         if respuesta_api["status"] == "exito":
