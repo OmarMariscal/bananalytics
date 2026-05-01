@@ -48,11 +48,11 @@ class MainLayout(ft.Container):
                 self.txt_support_title,
                 ft.Row([
                     ft.Container(content=ft.Image(src="/icon_email.png",width=20,fit="contain")),
-                    ft.Text("support@bananalytics.com", size=12, color="#8D7A66")
+                    ft.Text("MonkeyCodeInc+BananalyticsSupport@gmail.com", size=12, color="#8D7A66")
                 ]),
             ], tight=True, spacing=10),
             padding=20,
-            width=300,
+            width=350,
             bgcolor=ft.colors.BACKGROUND,
             border_radius=15,
             border=ft.border.all(1, "#E0E0E0"),

@@ -13,11 +13,20 @@ class Dashboard(ft.Container):
 
         self.list_alerts = self.backend_service.get_alerts()
         now = datetime.now()
-        self.date = now.strftime("%A, %B %d, %Y")
-        self.server_status = self.backend_service.get_server_status()
-        self.server_status_color = "#E8FCE8" if self.server_status else "#FCE8E8"
-        self.server_status_text = "#2E7D32" if self.server_status else "#C85050"
-        self.server_status = "● Online" if self.server_status else "● Offline"
+        now = datetime.now()
+
+        dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+        meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+
+        nombre_dia = dias_semana[now.weekday()]
+        nombre_mes = meses[now.month - 1]
+        dia_num = now.day
+        anio = now.year
+
+        self.date = f"{nombre_dia}, {nombre_mes} {dia_num}, {anio}"
+                
+        self.status_button = ft.Container(on_click=self._handle_sync)
+        self._update_status_ui()
 
         self.content = ft.Row(
             controls=[
@@ -28,6 +37,62 @@ class Dashboard(ft.Container):
             spacing=0
         )
 
+    def _update_status_ui(self):
+        """Actualiza los colores y texto del botón de estatus basado en el backend"""
+        is_online = self.backend_service.get_server_status()
+        
+        color_bg = "#E8FCE8" if is_online else "#FCE8E8"
+        color_text = "#2E7D32" if is_online else "#C85050"
+        label = "● Online" if is_online else "● Offline"
+
+        self.status_button.content = ft.Text(label, size=12, color=color_text, weight="bold")
+        self.status_button.bgcolor = color_bg
+        self.status_button.padding = ft.padding.symmetric(horizontal=12, vertical=6)
+        self.status_button.border_radius = 15
+        
+        self.status_button.on_hover = lambda e: self._on_button_hover(e, color_bg)
+
+    def _on_button_hover(self, e, original_bg):
+        e.control.bgcolor = ft.colors.BLACK12 if e.data == "true" else original_bg
+        
+        if e.control.page:
+            e.control.update()
+
+    def _handle_sync(self, e):
+        """Función que se ejecuta al presionar el botón Online/Offline"""
+        is_sync = self.backend_service.sync()
+
+        if is_sync:
+            self.list_alerts = self.backend_service.get_alerts()
+            self._update_status_ui()
+            
+            self.content.controls = [
+                self._build_left_section(),
+                self._build_right_section()
+            ]
+            self.update()
+        else:
+            def close_dlg(e):
+                confirm_dialog.open = False
+                self.main_page.update()
+
+            confirm_dialog = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Error de Conexión"),
+                content=ft.Text(
+                    "No se pudo establecer comunicación con el servidor.\n"
+                    "Por favor, verifica tu conexión a internet o intenta más tarde."
+                ),
+                actions=[
+                    ft.TextButton("Entendido", on_click=close_dlg),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+
+            self.main_page.dialog = confirm_dialog
+            confirm_dialog.open = True
+            self.main_page.update()
+
     def _build_left_section(self):
         return ft.Container(
             expand=3,
@@ -35,26 +100,22 @@ class Dashboard(ft.Container):
             bgcolor=ft.colors.BACKGROUND,
             content=ft.Column(
                 controls=[
-                    # Encabezado
                     ft.Row([
                         ft.Column([
-                            ft.Text("Global Product Status", size=24, weight="bold", color=ft.colors.ON_SURFACE),
+                            ft.Text("Estatus General de Productos", size=24, weight="bold", color=ft.colors.ON_SURFACE),
                             ft.Text(self.date, size=14, color="#8D7A66"),
                         ], spacing=2),
-                        ft.Container(
-                            content=ft.Text(self.server_status, size=12, color=self.server_status_text, weight="bold"),
-                            bgcolor=self.server_status_color,
-                            padding=ft.padding.symmetric(horizontal=12, vertical=6),
-                            border_radius=15
-                        )
+                        
+                        self.status_button
+                        
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     
                     ft.Divider(height=20, color="transparent"),
 
                     ft.Row([
-                        self._stat_card("Total Scans Today", "1,247", "/icon_scaner.png", "#FDF3E7"),
-                        self._stat_card("Active Predictions", "23", "/icon_spyco.png", "#E8FCE8"),
-                        self._stat_card("Pending Offline Syncs", "8", "/icon_sky.png", "#FDF3E7"),
+                        self._stat_card("Escaneos Totales del Día", "1,247", "/icon_scaner.png", "#FDF3E7"),
+                        self._stat_card("Predicciones Activas", "23", "/icon_spyco.png", "#E8FCE8"),
+                        self._stat_card("Sincronizaciones Offline Pendientes", "8", "/icon_sky.png", "#FDF3E7"),
                     ], spacing=20),
                     
                     ft.Container(
@@ -65,7 +126,7 @@ class Dashboard(ft.Container):
                         margin=ft.margin.only(top=20),
                         padding=20,
                         content=ft.Column([
-                            ft.Text("Sales Predictions vs Actuals (Gráfica aquí)", color="#8D7A66"),
+                            ft.Text("Principales Productos Destacados", color="#8D7A66"),
                             self._build_deviation_chart()
                         ], alignment=ft.MainAxisAlignment.CENTER)
                     )
@@ -87,7 +148,7 @@ class Dashboard(ft.Container):
             padding=10,
             content=ft.Column(
                 controls=[
-                    ft.Text("Product Intelligence", size=18, weight="bold", color=ft.colors.ON_SURFACE),
+                    ft.Text("Panel de productos", size=18, weight="bold", color=ft.colors.ON_SURFACE),
                     ft.Text("AI-powered demand predictions", size=12, color="#8D7A66"),
                     ft.Divider(height=20, color="transparent"),
                     
@@ -121,11 +182,11 @@ class Dashboard(ft.Container):
             self.main_page.update()
 
         if alert.type == "deficit":
-            badge_bg, badge_color, badge_text = "#FCE8E8", "#D32F2F", f"Deficit: {alert.prediction} units"
+            badge_bg, badge_color, badge_text = "#FCE8E8", "#D32F2F", f"Déficit: {alert.prediction} units"
         elif alert.type == "superavit":
-            badge_bg, badge_color, badge_text = "#E8FCE8", "#2E7D32", f"Surplus: {alert.prediction} units"
+            badge_bg, badge_color, badge_text = "#E8FCE8", "#2E7D32", f"Superávit: {alert.prediction} units"
         else:
-            badge_bg, badge_color, badge_text = "#F0EFE9", "#8D7A66", "Stable"
+            badge_bg, badge_color, badge_text = "#F0EFE9", "#8D7A66", "Estable"
 
         return ft.Container(
             bgcolor=ft.colors.SURFACE_VARIANT,
