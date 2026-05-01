@@ -239,7 +239,6 @@ def render_report_pdf(
     wp_document = HTML(
         string=html_string,
         base_url=str(_TEMPLATES_DIR),
-        presentational_hints=True,
     )
 
     # Paso 3: Renderizar a bytes PDF en memoria.
