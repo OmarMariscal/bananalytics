@@ -336,7 +336,7 @@ def get_predictions(store_id: int, db: Session = Depends(get_db)):
             "type": pred.type
         })
         
-    return respuesta
+    return {"predictions": respuesta}
 
 #Obtener Historial de Ventas de un Producto Específico (Necesita autenticación con API Key)*****************
 @app.get("/api/v1/business/{store_id}/{barcode}", dependencies=[Depends(verify_api_key)])
@@ -364,4 +364,4 @@ def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db)
             "total_vendido": fila.total_vendido
         })
         
-    return respuesta
+    return {"history": respuesta}
