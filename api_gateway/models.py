@@ -113,7 +113,7 @@ class Prediccion(Base):
     category     = Column(String(100))
     image_url    = Column(String(500))
 
-    objetive_date               = Column(Date,    nullable=False)
+    objective_date               = Column(Date,    nullable=False)
     prediction                  = Column(Integer, nullable=False)        # Unidades enteras
     feature                     = Column(Boolean, default=False, nullable=False)  # es_destacado
     type                        = Column(Enum(TipoAlerta, name="tipo_alerta"), default=TipoAlerta.none, nullable=False)
