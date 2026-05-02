@@ -21,6 +21,7 @@ psycopg2-binary==2.9.11    # Driver PostgreSQL para Python (binario: sin compila
 # Requiere dependencias del sistema instaladas en el runner (ver weekly_report.yml):
 #   libpango-1.0-0, libpangoft2-1.0-0, libgdk-pixbuf2.0-0, libffi-dev
 weasyprint==62.3            # Motor de renderizado PDF desde HTML/CSS
+pydyf<0.11.0
 
 # ── [TEMPLATE] Motor de templates ────────────────────────────────────────────
 Jinja2==3.1.6               # Motor de templates HTML para el reporte
@@ -34,3 +35,4 @@ python-dotenv==1.2.2        # Lectura de archivos .env para desarrollo local
 greenlet==3.3.2             # Requerido por SQLAlchemy para operaciones async
 MarkupSafe==3.0.2           # Requerido por Jinja2 para escape seguro de HTML
 typing_extensions==4.15.0  # Requerido por Pydantic
+
