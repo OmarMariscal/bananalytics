@@ -137,6 +137,12 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
                 #Llamamos a nuestra función ayudante y le pasamos el código y nuestra sesión "db"
                 producto_info = obtener_o_crear_producto(codigo, db)
 
+                if producto_info is None:
+                    # Si GO UPC falló y el producto no se pudo registrar en la base de datos central, ABORTAMOS la inserción de esta venta en particular
+                    # para evitar el error 'ForeignKeyViolation' que crashearía todo el bloque.
+                    print(f"⚠️ Venta omitida: El código {codigo} no existe en catálogo y GO UPC falló.")
+                    continue  # Salta a la siguiente iteración del for (al siguiente producto)
+
                 #Preparamos el registo para la tabla sales_database
                 nueva_venta = Venta(
                     store_id=tienda_id,

@@ -7,8 +7,15 @@ from models import Base  # Importa las tablas de models.py
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-#Crear el "motor" que se conecta a Neon
-engine = create_engine(DATABASE_URL, echo=True)
+#Crear el "motor" que se conecta a Neon con protección anti-desconexiones SSL
+es_desarrollo = os.environ.get("DEBUG", "false").lower() == "true" #Cambiar a false cuando dejemos de hacer pruebas locales para evitar el exceso de logs en producción
+
+engine = create_engine(
+    DATABASE_URL, 
+    echo=es_desarrollo, 
+    pool_pre_ping=True, 
+    pool_recycle=300
+)
 
 #Función para generar las tablas
 def init_db():
