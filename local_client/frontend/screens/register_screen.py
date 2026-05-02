@@ -15,7 +15,7 @@ class RegisterScreen(ft.Column):
         self.alignment = ft.MainAxisAlignment.CENTER
 
         self.logo_bananalytics = ft.Image(
-            src="/logo_with_letters.png",
+            src="/logo_only.png",
             width=80,
             height=80,
             fit="contain"
@@ -99,7 +99,7 @@ class RegisterScreen(ft.Column):
             padding=30,
             shadow=ft.BoxShadow(
                 blur_radius=15,
-                color=ft.Colors.with_opacity(0.1, "black"),
+                color=ft.colors.with_opacity(0.1, "black"),
             ),
             content=ft.Column(
                 controls=[
@@ -145,7 +145,7 @@ class RegisterScreen(ft.Column):
             self.name.border_color = "red"
         else:
             self.error_name.visible = False
-            self.name.border_color = ft.Colors.BLACK
+            self.name.border_color = ft.colors.BLACK
 
         validate_email = bool(re.match(patron, email))
         if not validate_email:
@@ -154,7 +154,7 @@ class RegisterScreen(ft.Column):
             self.email.border_color = "red"
         else:
             self.error_email.visible = False
-            self.email.border_color = ft.Colors.BLACK
+            self.email.border_color = "#E0D7C6"
 
         if validate_name and validate_email:
             new_user = User(name=name, email=email)
@@ -181,14 +181,14 @@ class RegisterScreen(ft.Column):
             self.name.border_color = "red"
         else:
             self.error_name.visible = False
-            self.name.border_color=ft.Colors.BLACK
+            self.name.border_color="#E0D7C6"
         
         self.page.update()
 
     def _email_validate(self, e):
 
         self.error_email.visible = False
-        self.email.border_color = ft.Colors.BLACK
+        self.email.border_color = "#E0D7C6"
         self.page.update()
 
     def _close_dialog(self, e):

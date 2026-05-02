@@ -66,7 +66,7 @@ class SyncDaemon:
             if True:
                 print("Iniciando cierre de caja automatico...")
                 self.sincronizacion_nocturna()
-                time.sleep(5)
+                time.sleep(60)
 
             time.sleep(5)
 

@@ -5,10 +5,9 @@ from shared.models.user import User
 from service.backend.db.sqlite_manager import SQLiteManager
 from service.backend.sync.sync import SyncDaemon
 from service.backend.config.config_manager import ConfigManager
-from local_client.service.backend.peticiones_api import ApiClient
+from service.backend.peticiones_api import ApiClient
 from datetime import datetime, date
-from local_client.service.backend.scanner_listener import ScannerListener
-from shared.utils.validators import Validators
+from service.backend.scanner_listener import ScannerListener
 import os
 
 
