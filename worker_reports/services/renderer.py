@@ -44,19 +44,21 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from weasyprint import HTML
 
-from db_queries import CategoryStats, StoreRecord, WeeklyStats
-from logger import get_logger
+from db import CategoryStats, StoreRecord, WeeklyStats
+from utils import get_logger
+# para encontrar la carpeta "templates/".
+_BASE_DIR = Path(__file__).parent.parent
 
 logger = get_logger(__name__)
 
-# ── Rutas base del microservicio ─────────────────────────────────────────────
+# Rutas base del microservicio
 
-_BASE_DIR = Path(__file__).parent
+_BASE_DIR = Path(__file__).parent.parent
 _TEMPLATES_DIR = _BASE_DIR / "templates"
 _STYLES_PATH = _TEMPLATES_DIR / "styles.css"
 _LOGO_PATH = _TEMPLATES_DIR / "assets" / "logo_bananalytics.png"
 
-# ── Entorno Jinja2 ────────────────────────────────────────────────────────────
+# Entorno Jinja2
 
 _jinja_env = Environment(
     loader=FileSystemLoader(str(_TEMPLATES_DIR)),
@@ -188,36 +190,11 @@ def render_report_pdf(
     category_breakdown: list[CategoryStats],
     generated_at: str,
 ) -> bytes:
-    """
-    Genera el reporte PDF completo para una tienda y lo retorna como bytes.
-
-    Pipeline interno:
-        1. render_report_html()  → HTML string completo
-        2. WeasyPrint HTML()     → DOM del documento
-        3. .write_pdf()          → bytes del PDF en memoria
-
-    El PDF se genera completamente en memoria (io.BytesIO) y nunca toca el
-    disco del runner, lo que es correcto para entornos de CI/CD efímeros.
-
-    Args:
-        store:              Datos de la tienda destinataria.
-        stats:              Métricas agregadas y listas de predicciones.
-        category_breakdown: Lista de CategoryStats para la tabla de categorías.
-        generated_at:       Timestamp formateado de generación.
-
-    Returns:
-        Contenido binario del PDF como `bytes`.
-
-    Raises:
-        WeasyPrint exceptions si el HTML es inválido o hay errores de renderizado.
-        FileNotFoundError si los recursos del template no están disponibles.
-    """
     logger.info(
         f"  🖨  Renderizando PDF para tienda {store.store_id} "
         f"({store.owner_name}, {store.city})..."
     )
 
-    # Paso 1: Renderizar HTML desde el template Jinja2
     html_string = render_report_html(
         store=store,
         stats=stats,
@@ -225,42 +202,13 @@ def render_report_pdf(
         generated_at=generated_at,
     )
 
-    # Paso 2: Crear objeto HTML de WeasyPrint.
-    #
-    # `presentational_hints=True`: permite que WeasyPrint respete atributos
-    # HTML de presentación (align, bgcolor, width en tablas), mejorando la
-    # compatibilidad con el HTML generado por Jinja2.
-    # ⚠️  CORRECCIÓN WeasyPrint 62.x: este parámetro pertenece al constructor
-    # HTML(), NO a write_pdf(). Pasarlo en write_pdf() causa TypeError.
-    #
-    # `base_url=str(_TEMPLATES_DIR)`: fallback para resolución de URLs relativas.
-    # En la práctica el CSS es inline y el logo es Data URI, por lo que
-    # WeasyPrint no realiza peticiones de recursos externos.
     wp_document = HTML(
         string=html_string,
         base_url=str(_TEMPLATES_DIR),
     )
 
-    # Paso 3: Renderizar a bytes PDF en memoria.
-    #
-    # `target=pdf_buffer`: escribe el PDF directamente en el BytesIO, evitando
-    # escritura en disco. `io.BytesIO.getvalue()` retorna todo el contenido
-    # independientemente de la posición del cursor (no requiere seek(0)).
-    #
-    # ⚠️  CORRECCIÓN WeasyPrint 62.x: write_pdf() NO acepta `font_config` ni
-    # `presentational_hints` como parámetros en esta versión. Pasarlos causa
-    # TypeError: write_pdf() got an unexpected keyword argument.
-    # `FontConfiguration` solo se necesita al usar `CSS(font_config=...)` con
-    # fuentes @font-face locales, que no es el caso de este worker.
     pdf_buffer = io.BytesIO()
     wp_document.write_pdf(target=pdf_buffer)
 
     pdf_bytes = pdf_buffer.getvalue()
-    size_kb = len(pdf_bytes) / 1024
-
-    logger.info(
-        f"  ✅ PDF generado: {size_kb:.1f} KB "
-        f"para {store.owner_name} (tienda {store.store_id})"
-    )
-
     return pdf_bytes

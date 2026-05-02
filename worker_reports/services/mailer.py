@@ -40,19 +40,19 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr, formatdate
 
-from db_queries import StoreRecord, WeeklyStats
-from logger import get_logger
-from settings import get_settings
+from db import StoreRecord, WeeklyStats
+from utils import get_logger
+from config import get_settings
 
 logger = get_logger(__name__)
 _settings = get_settings()
 
-# ── Constante de timeout de conexión SMTP ────────────────────────────────────
+# Constante de timeout de conexión SMTP
 
 _SMTP_TIMEOUT_SECONDS: int = 30
 
 
-# ── Construcción del mensaje MIME ────────────────────────────────────────────
+# Construcción del mensaje MIME
 
 def _build_plain_text_body(
     store: StoreRecord,
@@ -145,7 +145,7 @@ def _build_html_body(
     period_start = stats.date_range_start.strftime("%d/%m/%Y")
     period_end = stats.date_range_end.strftime("%d/%m/%Y")
 
-    # ── Filas de alertas prioritarias ────────────────────────────────────────
+    # Filas de alertas prioritarias
     featured_rows_html = ""
     if stats.featured_rows_list:
         rows_html_parts = []
@@ -249,7 +249,7 @@ def _build_html_body(
             ✅ No se detectaron alertas prioritarias para este período.
         </p>"""
 
-    # ── HTML completo del correo ──────────────────────────────────────────────
+    # HTML completo del correo
     return f"""
 <!DOCTYPE html>
 <html lang="es">
@@ -492,7 +492,7 @@ def _build_message(
     """
     msg = MIMEMultipart("mixed")
 
-    # ── Encabezados del mensaje ───────────────────────────────────────────────
+    #  Encabezados del mensaje
     msg["Subject"] = (
         f"📊 Reporte Semanal BanAnalytics — {store.owner_name} ({period_label})"
     )
@@ -501,7 +501,7 @@ def _build_message(
     msg["Date"] = formatdate(localtime=False)
     msg["X-Mailer"] = "BanAnalytics Worker Reports v1.0"
 
-    # ── Parte alternativa (plain + html) ─────────────────────────────────────
+    # Parte alternativa (plain + html)
     alt_part = MIMEMultipart("alternative")
 
     plain_text = _build_plain_text_body(store, stats, generated_at)
@@ -515,7 +515,7 @@ def _build_message(
 
     msg.attach(alt_part)
 
-    # ── Adjunto PDF ───────────────────────────────────────────────────────────
+    # Adjunto PDF
     filename = (
         f"BanAnalytics_Reporte_{store.store_id}_"
         f"{date.today().strftime('%Y-%m-%d')}.pdf"
