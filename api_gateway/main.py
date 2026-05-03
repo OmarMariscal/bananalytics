@@ -169,6 +169,11 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
 
 #Función para buscar el producto en Neon, o lo descarga de Go UPC******************************************************
 def obtener_o_crear_producto(barcode: str, db: Session):
+    # Verificamos que contenga exclusivamente números y tenga una longitud comercial estándar (8 a 14 dígitos)
+    if not barcode.isdigit() or not (8 <= len(barcode) <= 14):
+        print(f"xX Código ignorado: '{barcode}' no tiene un formato comercial válido (EAN/UPC) Xx")
+        return None
+    
     #Buscamos en nuestra base de datos central primero
     producto_existente = db.query(Producto).filter(Producto.barcode == barcode).first()
     
@@ -189,7 +194,7 @@ def obtener_o_crear_producto(barcode: str, db: Session):
         
         #Si el producto no está registrado, Go UPC devuelve 404
         if respuesta.status_code == 404:
-            print(f"Advertencia: Producto {barcode} no encontrado.")
+            print(f"Advertencia: Producto {barcode} no encontrado en GO UPC.")
             nuevo_producto = Producto(
                 barcode=barcode,
                 product_name="Producto Desconocido",
