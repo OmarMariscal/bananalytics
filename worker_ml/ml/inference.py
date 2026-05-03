@@ -189,7 +189,7 @@ def get_store_predictions(
                     product_name=info["product_name"],
                     category=info["category"],
                     image_url=info["image_url"],
-                    objetive_date=obj_date,
+                    objective_date=obj_date,
                     prediction=pred,                                         # Integer ✅
                     feature=is_outstanding,
                     type=type_,
