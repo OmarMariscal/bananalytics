@@ -66,7 +66,9 @@ class Dashboard(ft.Container):
         if is_sync:
             self.list_alerts = self.backend_service.get_alerts()
             self._update_status_ui()
-            
+            self.dashboard_stats = self.backend_service.get_dashboard_stats()
+
+
             self.content.controls = [
                 self._build_left_section(),
                 self._build_right_section()

@@ -1,7 +1,7 @@
 import flet as ft
 from frontend.app import App
 
-USE_MOCK = True
+USE_MOCK = False
 
 if USE_MOCK:
     from service.mock.mock_backend_service import MockBackendService
