@@ -1,0 +1,16 @@
+{
+    "id_store": "27",
+    "date": "05-05-2026",
+    "day": 2,
+    "sales": [
+        {
+            "time": "18:00:00",
+            "products": [
+                {
+                    "barcode": "queest\u00b4apasandoaqu\u00b4i?",
+                    "amount": 1
+                }
+            ]
+        }
+    ]
+}

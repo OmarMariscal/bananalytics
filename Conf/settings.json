@@ -1,0 +1,16 @@
+{
+    "system": {
+        "first_launch_completed": true,
+        "local_db_path": "./tienda.db"
+    },
+    "store_profile": {
+        "id_store": "27",
+        "owner_name": "Pepe Pecas",
+        "email": "metaleror55@gmail.com",
+        "location": {
+            "city": "Guadalajara, Jalisco",
+            "lat": 20.6596,
+            "lng": -103.3496
+        }
+    }
+}
