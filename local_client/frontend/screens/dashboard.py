@@ -2,6 +2,7 @@ import flet as ft
 import datetime
 from datetime import datetime
 from frontend.components.product_details import ProductDetailDialog
+from frontend.components.marquesin_text import TextoMarquesina
 
 class Dashboard(ft.Container):
     def __init__(self, backend_service, page):
@@ -188,6 +189,13 @@ class Dashboard(ft.Container):
         else:
             badge_bg, badge_color, badge_text = "#F0EFE9", "#8D7A66", "Estable"
 
+        product_name_display = TextoMarquesina(
+            texto=alert.product_name, 
+            ancho_max=40,
+            size_text=14,
+            color=ft.colors.ON_SURFACE
+        )
+
         return ft.Container(
             bgcolor=ft.colors.SURFACE_VARIANT,
             border_radius=15,
@@ -214,7 +222,7 @@ class Dashboard(ft.Container):
                     ),
                     ft.Column(
                         controls=[
-                            ft.Text(alert.product_name, weight="bold", size=14, color=ft.colors.ON_SURFACE),
+                            product_name_display,
                             ft.Row([
                                 ft.Image("/icon_calendar.png", width=12),
                                 ft.Text(alert.objective_date.strftime("%b %d, %Y"), size=11, color="#8D7A66")

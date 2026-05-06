@@ -99,15 +99,15 @@ class RegisterScreen(ft.Column):
         )
 
         self.success_dialog = ft.AlertDialog(
-            title=ft.Text("¡Registro Exitoso!"),
-            content=ft.Text(""),
+            title=ft.Text("¡Registro Exitoso!", color="black"),
+            content=ft.Text("", color="black"),
             bgcolor="#FFFFFF",
             actions=[ft.TextButton("Continuar", on_click=self._close_dialog)],
         )
         
         self.error_dialog = ft.AlertDialog(
-            title=ft.Text("Ha ocurrido algo..."),
-            content=ft.Text(""),
+            title=ft.Text("Ha ocurrido algo...",color="black"),
+            content=ft.Text("", color="black"),
             bgcolor="#FFFFFF",
             actions=[ft.TextButton("Continuar", on_click=self._close_dialog)],
         )
