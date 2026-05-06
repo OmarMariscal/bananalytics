@@ -2,6 +2,7 @@ from shared.models.prediction import PredictionAlert
 from shared.models.info_config import ConfigStats
 from shared.models.user import User
 from datetime import date
+import time
 
 class MockBackendService:
     def get_alerts(self) -> list[PredictionAlert]:
@@ -187,9 +188,10 @@ class MockBackendService:
         )
     
     def is_first_start(self) -> bool:
-        return False
+        return True
     
     def register_user(self, user: User) -> dict:
+        time.sleep(5)
         return {
             'status': True,
             'message': 'El correo a sido registrado'

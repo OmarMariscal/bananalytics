@@ -31,21 +31,25 @@ class RegisterScreen(ft.Column):
         self.name = ft.TextField(
             label="Nombre completo",
             hint_text="e.g., Margarita López",
-            border_color="#E0D7C6",
+            border_color="#F3E6D5",
             bgcolor="#FDFBF9",
             on_change=self._text_validate,
             text_size=14,
             height=50,
+            label_style=ft.TextStyle(color="#8D7A66"),
+            hint_style=ft.TextStyle(color="#C1B5A9"),
         )
 
         self.email = ft.TextField(
             label="Correo electronico",
             hint_text="e.g., support@bananalytics.com",
-            border_color="#E0D7C6",
+            border_color="#F3E6D5",
             bgcolor="#FDFBF9",
             on_change=self._email_validate,
             text_size=14,
             height=50,
+            label_style=ft.TextStyle(color="#8D7A66"),
+            hint_style=ft.TextStyle(color="#C1B5A9"),
         )
 
         self.error_name = ft.Text("", color="red", size=11, visible=False)
@@ -54,6 +58,22 @@ class RegisterScreen(ft.Column):
         self.btn_registro =  PrimaryButton(
             texto_usuario = "Finalizar Registro",
             accion_click = self._validar_y_enviar
+        )
+
+        self.loading_dialog = ft.AlertDialog(
+            modal=True,
+            bgcolor="white",
+            content=ft.Container(
+                padding=ft.padding.all(10),
+                content=ft.Row(
+                    controls=[
+                        ft.ProgressRing(color="#C0843F", stroke_width=3, width=30, height=30),
+                        ft.Text("Registrando usuario, por favor espera...", size=14, color="#4A3F35")
+                    ],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=20
+                )
+            )
         )
 
         self.location_note = ft.Container(
@@ -81,14 +101,14 @@ class RegisterScreen(ft.Column):
         self.success_dialog = ft.AlertDialog(
             title=ft.Text("¡Registro Exitoso!"),
             content=ft.Text(""),
-            bgcolor="#C0843F",
+            bgcolor="#FFFFFF",
             actions=[ft.TextButton("Continuar", on_click=self._close_dialog)],
         )
         
         self.error_dialog = ft.AlertDialog(
             title=ft.Text("Ha ocurrido algo..."),
             content=ft.Text(""),
-            bgcolor="#C0843F",
+            bgcolor="#FFFFFF",
             actions=[ft.TextButton("Continuar", on_click=self._close_dialog)],
         )
 
@@ -145,7 +165,7 @@ class RegisterScreen(ft.Column):
             self.name.border_color = "red"
         else:
             self.error_name.visible = False
-            self.name.border_color = ft.colors.BLACK
+            self.name.border_color="#F3E6D5"
 
         validate_email = bool(re.match(patron, email))
         if not validate_email:
@@ -154,12 +174,17 @@ class RegisterScreen(ft.Column):
             self.email.border_color = "red"
         else:
             self.error_email.visible = False
-            self.email.border_color = "#E0D7C6"
+            self.email.border_color = "#F3E6D5"
 
         if validate_name and validate_email:
+            self.page.dialog = self.loading_dialog
+            self.loading_dialog.open = True
+            self.page.update()
+
             new_user = User(name=name, email=email)
             self.status = self.backend_service.register_user(new_user)
-            
+            self.loading_dialog.open = False
+
             if self.status.get('status'):
                 self.name.value = ""
                 self.email.value = ""
@@ -181,14 +206,14 @@ class RegisterScreen(ft.Column):
             self.name.border_color = "red"
         else:
             self.error_name.visible = False
-            self.name.border_color="#E0D7C6"
+            self.name.border_color="#F3E6D5"
         
         self.page.update()
 
     def _email_validate(self, e):
 
         self.error_email.visible = False
-        self.email.border_color = "#E0D7C6"
+        self.email.border_color = "#F3E6D5"
         self.page.update()
 
     def _close_dialog(self, e):

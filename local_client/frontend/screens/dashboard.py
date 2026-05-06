@@ -50,7 +50,6 @@ class Dashboard(ft.Container):
         self.status_button.bgcolor = color_bg
         self.status_button.padding = ft.padding.symmetric(horizontal=12, vertical=6)
         self.status_button.border_radius = 15
-        
         self.status_button.on_hover = lambda e: self._on_button_hover(e, color_bg)
 
     def _on_button_hover(self, e, original_bg):
