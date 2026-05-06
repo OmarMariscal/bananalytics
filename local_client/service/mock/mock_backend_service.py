@@ -2,12 +2,13 @@ from shared.models.prediction import PredictionAlert
 from shared.models.info_config import ConfigStats
 from shared.models.user import User
 from datetime import date
+import time
 
 class MockBackendService:
     def get_alerts(self) -> list[PredictionAlert]:
         return [
             PredictionAlert(
-                product_name="Premium Cola",
+                product_name="Premium Colancdefghijklmñopk",
                 barcode="7501000123456",
                 category="Bebidas",
                 image_url="https://www.coca-cola.com/content/dam/onexp/co/es/brands/coca-cola/coca-cola-original/ccso_600ml_750x750.png",
@@ -187,9 +188,10 @@ class MockBackendService:
         )
     
     def is_first_start(self) -> bool:
-        return False
+        return True
     
     def register_user(self, user: User) -> dict:
+        time.sleep(1)
         return {
             'status': True,
             'message': 'El correo a sido registrado'

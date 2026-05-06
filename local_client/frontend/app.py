@@ -38,9 +38,6 @@ class App:
         self._iniciar_dashboard_completo()
 
     def _iniciar_dashboard_completo(self):
-        self.page.clean()
-        self.page.dialog = None
-        self.page.update()
 
         self.stats = self.svc.get_dashboard_stats()
         self.config = self.svc.get_app_stats()

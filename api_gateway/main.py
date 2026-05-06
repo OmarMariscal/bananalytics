@@ -1,5 +1,6 @@
 import os
 import requests
+import math
 from datetime import datetime, date #Para generar fechas de registro
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import APIKeyHeader
@@ -325,6 +326,13 @@ def get_predictions(store_id: int, db: Session = Depends(get_db)):
     respuesta = []
     
     for pred in resultados:
+        #Extraemos el valor de la base de datos
+        desviacion = pred.percentage_average_deviation
+        
+        #SANITIZACIÓN: Si el número es infinito o NaN (Not a Number), lo bajamos a 0.0 para que el JSON no explote
+        if math.isinf(desviacion) or math.isnan(desviacion):
+            desviacion = 0.0
+        
         respuesta.append({
             "product_name": pred.product_name,
             "Category": pred.category,

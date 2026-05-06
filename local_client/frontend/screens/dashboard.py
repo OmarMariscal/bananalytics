@@ -2,6 +2,7 @@ import flet as ft
 import datetime
 from datetime import datetime
 from frontend.components.product_details import ProductDetailDialog
+from frontend.components.marquesin_text import TextoMarquesina
 
 class Dashboard(ft.Container):
     def __init__(self, backend_service, page):
@@ -10,6 +11,7 @@ class Dashboard(ft.Container):
         self.backend_service = backend_service
         self.expand = True
         self.padding = 0
+        self.dashboard_stats = self.backend_service.get_dashboard_stats()
 
         self.list_alerts = self.backend_service.get_alerts()
         now = datetime.now()
@@ -49,7 +51,6 @@ class Dashboard(ft.Container):
         self.status_button.bgcolor = color_bg
         self.status_button.padding = ft.padding.symmetric(horizontal=12, vertical=6)
         self.status_button.border_radius = 15
-        
         self.status_button.on_hover = lambda e: self._on_button_hover(e, color_bg)
 
     def _on_button_hover(self, e, original_bg):
@@ -113,9 +114,9 @@ class Dashboard(ft.Container):
                     ft.Divider(height=20, color="transparent"),
 
                     ft.Row([
-                        self._stat_card("Escaneos Totales del Día", "1,247", "/icon_scaner.png", "#FDF3E7"),
-                        self._stat_card("Predicciones Activas", "23", "/icon_spyco.png", "#E8FCE8"),
-                        self._stat_card("Sincronizaciones Offline Pendientes", "8", "/icon_sky.png", "#FDF3E7"),
+                        self._stat_card("Escaneos Totales del Día", self.dashboard_stats["total_scans_today"], "/icon_scaner.png", "#FDF3E7"),
+                        self._stat_card("Predicciones Activas", self.dashboard_stats["active_predictions"], "/icon_spyco.png", "#E8FCE8"),
+                        self._stat_card("Sincronizaciones Offline Pendientes", self.dashboard_stats["pending_syncs"], "/icon_sky.png", "#FDF3E7"),
                     ], spacing=20),
                     
                     ft.Container(
@@ -188,6 +189,13 @@ class Dashboard(ft.Container):
         else:
             badge_bg, badge_color, badge_text = "#F0EFE9", "#8D7A66", "Estable"
 
+        product_name_display = TextoMarquesina(
+            texto=alert.product_name, 
+            ancho_max=40,
+            size_text=14,
+            color=ft.colors.ON_SURFACE
+        )
+
         return ft.Container(
             bgcolor=ft.colors.SURFACE_VARIANT,
             border_radius=15,
@@ -214,7 +222,7 @@ class Dashboard(ft.Container):
                     ),
                     ft.Column(
                         controls=[
-                            ft.Text(alert.product_name, weight="bold", size=14, color=ft.colors.ON_SURFACE),
+                            product_name_display,
                             ft.Row([
                                 ft.Image("/icon_calendar.png", width=12),
                                 ft.Text(alert.objective_date.strftime("%b %d, %Y"), size=11, color="#8D7A66")

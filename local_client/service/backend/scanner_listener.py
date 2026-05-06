@@ -18,7 +18,7 @@ class ScannerListener:
         self.buffer = []
         self.ultimo_tiempo = time.time()
         #Si pasan as de 0.3 segundos entre teclas, asumimos que es un humano y cancelamos.
-        self.umbral_ms = 0.3
+        self.umbral_ms = 10.0
 
     def _on_press(self, key):
         """

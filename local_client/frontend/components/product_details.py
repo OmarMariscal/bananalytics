@@ -1,5 +1,6 @@
 import flet as ft
 import datetime
+from frontend.components.marquesin_text import TextoMarquesina
 
 class ProductDetailDialog(ft.AlertDialog):
     def __init__(self, alert, page, backend_service):
@@ -13,6 +14,13 @@ class ProductDetailDialog(ft.AlertDialog):
         self.content_padding = 0
         
         date_str = self.alert.objective_date.strftime("%b %d, %Y")
+
+        self.product_name_display = TextoMarquesina(
+            texto=self.alert.product_name, 
+            ancho_max=200,
+            size_text=24,
+            color=ft.colors.ON_SURFACE
+        )
 
         self.content = ft.Container(
             width=1000,
@@ -52,7 +60,7 @@ class ProductDetailDialog(ft.AlertDialog):
                                     border=ft.border.all(1, "#F0EFE9")
                                 ),
                                 ft.Column(
-                                    [ft.Text(self.alert.product_name, size=28, weight="bold", color=ft.colors.ON_SURFACE),
+                                    [self.product_name_display,
                                     ft.Row(
                                         [ft.Container(content=ft.Image(src="/icon_category.png", width=20, fit="contain")),
                                         ft.Text(self.alert.category, size=14, color="#8D7A66")],
