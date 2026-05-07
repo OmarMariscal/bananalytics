@@ -108,13 +108,13 @@ def _build_feature_vector(
     
     return np.array(
         [
-            sin_day, cos_day,
+            sin_day, cos_day,          
             sin_day_month, cos_day_month,
             sin_month, cos_month,
-            fortnight,
-            float(temperature),
-            float(weather_code),
-            float(store_id)
+            fortnight,                  
+            (temperature - 20.0) / 15.0,  
+            float(weather_code) / 5.0,    
+            float(store_id) / 1000.0,     
         ],
         dtype=np.float64,
     )
