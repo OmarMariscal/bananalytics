@@ -42,8 +42,3 @@ missing-items.txt
 
 #Carpetas y Archivos de Prueba
 pruebas/
-
-#Configuraciones y Cache de datos
-Config/
-data/
-
