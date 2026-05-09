@@ -101,7 +101,7 @@ class BackendService: #Activa todas las herramientas, si no es primer inicio, ar
 
             #Mapeo de DTO al Modelo de Dominio
             nueva_alerta = PredictionAlert(
-                product_name=alerta.get("name", "Producto Desconocido"),
+                product_name=alerta.get("product_name", "Producto Desconocido"),
                 barcode=alerta.get("barcode", "000000"),
                 category=alerta.get("category", "General"),
                 image_url=alerta.get("image_url", "https://via.placeholder.com/150"),
