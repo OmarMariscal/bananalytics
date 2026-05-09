@@ -10,11 +10,23 @@ Implementa las Tareas 4.1, 4.2 y 4.3 de la arquitectura:
 ─── Fórmulas implementadas ──────────────────────────────────────────────────
 
 RF-05 (Variación porcentual):
-    Variación = ((P - V_p) / V_p) * 100
+    Variación = ((P − V_p) / V_p) × 100
 
     donde:
       P   = predicción del modelo (Integer ≥ 0)
       V_p = promedio diario de ventas del último mes (Float)
+
+─── Campos de contexto y calidad por predicción ─────────────────────────────
+
+    avg_weekly_sales  = V_p × 7
+      Promedio semanal de ventas del último mes en esa (tienda, producto).
+      Calculado una sola vez por (barcode, store_id) antes del bucle de días
+      para evitar N consultas idénticas a la BD.
+
+    margin_of_error   = round(model_rmse)
+      RMSE del modelo recuperado de models_database vía load_or_create_model,
+      sin consulta adicional a la BD. Expresa en unidades enteras cuánto puede
+      desviarse la predicción por encima o por abajo.
 
 ─── Manejo de ZeroDivisionError (RF-05 explícito) ───────────────────────────
     Si V_p = 0 y P > 0 → SUPERÁVIT atípico, feature=True.
@@ -45,8 +57,7 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 _settings = get_settings()
 
-
-#  Cliente Open-Meteo 
+# ── Cliente Open-Meteo ────────────────────────────────────────────────────────
 
 def _build_openmeteo_client() -> openmeteo_requests.Client:
     cached_session = requests_cache.CachedSession(".cache_openmeteo", expire_after=3_600)
@@ -56,8 +67,7 @@ def _build_openmeteo_client() -> openmeteo_requests.Client:
 
 _openmeteo_client = _build_openmeteo_client()
 
-
-#  Obtención de forecast 
+# ── Obtención de forecast ─────────────────────────────────────────────────────
 
 def get_climate_forecast(lat: float, lon: float) -> list[dict]:
     """
@@ -66,25 +76,25 @@ def get_climate_forecast(lat: float, lon: float) -> list[dict]:
     En caso de fallo de la API, devuelve forecast neutro para no detener el pipeline.
     """
     params = {
-        "latitude":  lat,
-        "longitude": lon,
-        "daily": ["temperature_2m_max", "temperature_2m_min", "weather_code"],
+        "latitude":      lat,
+        "longitude":     lon,
+        "daily":         ["temperature_2m_max", "temperature_2m_min", "weather_code"],
         "timezone":      "America/Mexico_City",
         "forecast_days": _settings.prediction_days,
     }
 
     try:
-        responses = _openmeteo_client.weather_api(_settings.open_meteo_url, params=params)
-        response  = responses[0]
-        daily     = response.Daily()
+        responses    = _openmeteo_client.weather_api(_settings.open_meteo_url, params=params)
+        response     = responses[0]
+        daily        = response.Daily()
 
-        temp_max  = daily.Variables(0).ValuesAsNumpy()
-        temp_min  = daily.Variables(1).ValuesAsNumpy()
-        wmo_codes = daily.Variables(2).ValuesAsNumpy().astype(int)
+        temp_max     = daily.Variables(0).ValuesAsNumpy()
+        temp_min     = daily.Variables(1).ValuesAsNumpy()
+        wmo_codes    = daily.Variables(2).ValuesAsNumpy().astype(int)
         temperatures = (temp_max + temp_min) / 2.0
 
         start_ts = pd.Timestamp(daily.Time(), unit="s", tz="America/Mexico_City")
-        dates   = pd.date_range(start=start_ts, periods=_settings.prediction_days, freq="D")
+        dates    = pd.date_range(start=start_ts, periods=_settings.prediction_days, freq="D")
 
         forecast = [
             {
@@ -98,14 +108,16 @@ def get_climate_forecast(lat: float, lon: float) -> list[dict]:
         return forecast
 
     except Exception as e:
-        logger.error(f"  ❌ Open-Meteo no respondió para ({lat}, {lon}): {e}. Usando forecast por defecto.")
+        logger.error(
+            f"  ❌ Open-Meteo no respondió para ({lat}, {lon}): {e}. "
+            f"Usando forecast por defecto."
+        )
         return [
             {"date": date.today() + timedelta(days=i), "temperatura": 22.0, "weather_code": 1}
             for i in range(_settings.prediction_days)
         ]
 
-
-#  Clasificación RF-05 
+# ── Clasificación RF-05 ───────────────────────────────────────────────────────
 
 def _classify(
     prediction: int,
@@ -132,8 +144,7 @@ def _classify(
 
     return False, TipoAlerta.none, variation
 
-
-# Generación de predicciones por tienda 
+# ── Generación de predicciones por tienda ────────────────────────────────────
 
 def get_store_predictions(
     store_id: int,
@@ -144,6 +155,14 @@ def get_store_predictions(
     """
     Genera y persiste predicciones de los próximos N días para todos los productos
     de una tienda, usando el clima local vía Open-Meteo.
+
+    Por cada (barcode, store_id) se calculan una sola vez antes del bucle de días:
+      · daily_avg      → promedio diario del último mes (base para RF-05).
+      · avg_weekly     → daily_avg × 7 (contexto semanal para el cliente).
+      · margin_of_error → RMSE del modelo, recuperado de models_database sin
+                          consulta adicional a la BD gracias al tercer elemento
+                          retornado por load_or_create_model.
+
     Retorna el número total de predicciones insertadas.
     """
     forecast = get_climate_forecast(lat, lon)
@@ -151,7 +170,11 @@ def get_store_predictions(
     with get_session() as session:
         productos_lista = session.query(Producto).filter(Producto.barcode.in_(barcodes)).all()
         productos_map: dict[str, dict] = {
-            p.barcode: {"product_name": p.product_name, "category": p.category, "image_url": p.image_url}
+            p.barcode: {
+                "product_name": p.product_name,
+                "category":     p.category,
+                "image_url":    p.image_url,
+            }
             for p in productos_lista
         }
 
@@ -164,44 +187,53 @@ def get_store_predictions(
             continue
 
         try:
-            model, _ = load_or_create_model(barcode)
-            average  = get_historical_average(barcode, store_id)
+            # ── Métricas por (barcode, store_id) — calculadas una sola vez ──
+            model, _, model_rmse = load_or_create_model(barcode)
+
+            daily_avg    = get_historical_average(barcode, store_id)
+            avg_weekly   = round(daily_avg * 7.0, 2)
+            margin       = int(round(model_rmse))
+
             news: list[Prediccion] = []
 
             for day in forecast:
-                obj_date:    date  = day["date"]
+                obj_date:     date  = day["date"]
                 temperature:  float = day["temperatura"]
                 weather_code: int   = day["weather_code"]
 
                 future_X = build_features_inference(
-                    fecha=obj_date, temperature=temperature,
-                    weather_code=weather_code, store_id=store_id,
+                    fecha        = obj_date,
+                    temperature  = temperature,
+                    weather_code = weather_code,
+                    store_id     = store_id,
                 )
 
                 pred_raw = float(model.predict(future_X)[0])
-                pred     = int(round(max(0, min(pred_raw, 9_999))))  # cap en 9,999 unidades/día
+                pred     = int(round(max(0, min(pred_raw, 9_999))))
                 if pred_raw > 9_999:
                     logger.warning(
                         f"    ⚠️  Predicción fuera de rango ({pred_raw:.0f}) para "
                         f"barcode={barcode} store={store_id} — recortada a {pred}"
                     )
 
-                is_outstanding, type_, porcentual_desviation = _classify(pred, average)
+                is_outstanding, type_, pct_deviation = _classify(pred, daily_avg)
 
                 news.append(Prediccion(
-                    store_id=store_id,
-                    barcode=barcode,
-                    product_name=info["product_name"],
-                    category=info["category"],
-                    image_url=info["image_url"],
-                    objective_date=obj_date,
-                    prediction=pred,                                        
-                    feature=is_outstanding,
-                    type=type_,
-                    percentage_average_deviation=porcentual_desviation,      
+                    store_id                     = store_id,
+                    barcode                      = barcode,
+                    product_name                 = info["product_name"],
+                    category                     = info["category"],
+                    image_url                    = info["image_url"],
+                    objective_date               = obj_date,
+                    prediction                   = pred,
+                    feature                      = is_outstanding,
+                    type                         = type_,
+                    percentage_average_deviation = pct_deviation,
+                    avg_weekly_sales             = avg_weekly,
+                    margin_of_error              = margin,
                 ))
 
-            # DELETE + INSERT atómico
+            # DELETE + INSERT atómico por (store_id, barcode)
             with get_session() as session:
                 session.query(Prediccion).filter_by(
                     store_id=store_id, barcode=barcode
@@ -211,7 +243,9 @@ def get_store_predictions(
             inserted += len(news)
 
         except Exception as e:
-            logger.error(f"    ❌ Error predicciones tienda={store_id} barcode={barcode}: {e}")
+            logger.error(
+                f"    ❌ Error predicciones tienda={store_id} barcode={barcode}: {e}"
+            )
             continue
 
     logger.info(f"  🏪 Tienda {store_id}: {inserted} predicciones · {len(barcodes)} productos")

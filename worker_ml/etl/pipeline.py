@@ -10,23 +10,27 @@ Responsabilidades:
 ─── Ingeniería de Características ───────────────────────────────────────────
   Las 10 features en orden FIJO (debe ser idéntico en entrenamiento e inferencia):
 
-  Índice │ Feature            │ Razón
-  ───────┼────────────────────┼──────────────────────────────────────────────
-     0   │ sin_dia_semana     │ Codificación cíclica: el modelo aprende que
-     1   │ cos_dia_semana     │ domingo y lunes son "cercanos", no 6 vs 0.
-     2   │ sin_dia_mes        │ Ídem para el día del mes (ciclo quincena).
-     3   │ cos_dia_mes        │
-     4   │ sin_mes            │ Estacionalidad anual.
-     5   │ cos_mes            │
-     6   │ es_quincena        │ 1 si estamos cerca del 15 o fin de mes (+40 % ventas).
-     7   │ temperatura        │ Valor directo en °C.
-     8   │ weather_code       │ Entero 0-5 (mapeado desde WMO via wmo_to_weather_code).
-     9   │ store_id           │ El modelo global aprende diferencias entre tiendas.
+  Índice │ Feature                  │ Razón
+  ───────┼──────────────────────────┼────────────────────────────────────────
+     0   │ sin_dia_semana           │ Codificación cíclica: el modelo aprende que
+     1   │ cos_dia_semana           │ domingo y lunes son "cercanos", no 6 vs 0.
+     2   │ sin_dia_mes              │ Ídem para el día del mes (ciclo quincena).
+     3   │ cos_dia_mes              │
+     4   │ sin_mes                  │ Estacionalidad anual.
+     5   │ cos_mes                  │
+     6   │ es_quincena              │ 1 si estamos cerca del 15 o fin de mes (+40 % ventas).
+     7   │ temperatura_norm         │ (°C − 20) / 15 → escala ~[−1, 1]; evita divergencia SGD.
+     8   │ weather_code_norm        │ código_interno / 5 → escala [0, 1].
+     9   │ store_id_norm            │ store_id / 1000 → escala pequeña, comparable al resto.
+
+  Normalización manual (features 7-9): evita dependencia de StandardScaler externo,
+  garantiza consistencia entre entrenamiento e inferencia sin estado adicional,
+  y es compatible con partial_fit() de SGDRegressor sin modificar su interfaz.
 
 ─── Flujo del campo de clima ─────────────────────────────────────────────────
   BD (weather_resume_wmo_code: Integer WMO)
     → wmo_to_weather_code(wmo)          ← único punto de conversión
-    → weather_code interno (0-5)        ← lo que ve el modelo
+    → weather_code interno (0-5)        ← lo que ve el modelo (normalizado /5)
   Open-Meteo forecast (WMO int)
     → wmo_to_weather_code(wmo)          ← misma función, misma escala
     → weather_code interno (0-5)
@@ -49,25 +53,25 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 _settings = get_settings()
 
-# Constantes
+# ── Constantes ────────────────────────────────────────────────────────────────
 
 N_FEATURES = 10
 
-_DEFAULT_WEATHER_CODE = 1 # Parcialmente nublado: promedio razonable
+_DEFAULT_WEATHER_CODE = 1  # Parcialmente nublado: valor neutro por defecto
 
 # Mapeo de WMO codes de Open-Meteo a código interno acotado (0-5).
 # Mismo mapeo para datos históricos (BD) y forecast (Open-Meteo).
 # https://open-meteo.com/en/docs#weathervariables
 _WMO_RANGES: list[tuple[set, int]] = [
-    ({0}, 0),                       # Cielo despejado
-    ({1, 2}, 1),                    # Principalmente despejado / parcialmente nublado
-    ({3}, 2),                       # Cubierto
-    (set(range(51, 68)), 3),        # Llovizna y lluvia ligera
-    (set(range(80, 83)), 4),        # Chubascos moderados
-    (set(range(95, 100)), 5),       # Tormenta eléctrica
+    ({0},                  0),  # Cielo despejado
+    ({1, 2},               1),  # Principalmente despejado / parcialmente nublado
+    ({3},                  2),  # Cubierto
+    (set(range(51, 68)),   3),  # Llovizna y lluvia ligera
+    (set(range(80, 83)),   4),  # Chubascos moderados
+    (set(range(95, 100)),  5),  # Tormenta eléctrica
 ]
 
-#Conversión de clima
+# ── Conversión de clima ───────────────────────────────────────────────────────
 
 def wmo_to_weather_code(wmo: int) -> int:
     """
@@ -79,46 +83,55 @@ def wmo_to_weather_code(wmo: int) -> int:
             return code
     return _DEFAULT_WEATHER_CODE
 
-# Helpers de feature engineering
+# ── Helpers de feature engineering ───────────────────────────────────────────
 
 def _cyclic(value: float, max_value: float) -> tuple[float, float]:
     """Codificación cíclica seno/coseno para variables periódicas."""
     angle = 2 * math.pi * value / max_value
     return math.sin(angle), math.cos(angle)
 
+
 def _is_fortnight(day: int) -> int:
     """Devuelve 1 si el día está cerca del 15 o del fin de mes."""
     return 1 if day in range(13, 18) or day >= 27 else 0
+
 
 def _build_feature_vector(
     fecha: date,
     temperature: float,
     weather_code: int,
     store_id: int,
-) -> np.array:
+) -> np.ndarray:
     """
     Construye el vector de N_FEATURES features para una observación.
-    Este es el único lugar donde se define el orden de features;
-    cualquier cambio aquí invalida todos los modelos existentes.
+
+    Este es el único lugar donde se define el orden y la escala de features;
+    cualquier cambio aquí invalida todos los modelos existentes en la BD.
+
+    Normalización aplicada a features no cíclicas (índices 7-9):
+      · temperatura  → (°C − 20) / 15    escala ~[−1, 1]
+      · weather_code → código / 5         escala [0, 1]
+      · store_id     → store_id / 1000    escala pequeña comparable al resto
     """
-    sin_day, cos_day = _cyclic(fecha.weekday(), 7)
-    sin_day_month, cos_day_month = _cyclic(fecha.day, 31)
-    sin_month, cos_month = _cyclic(fecha.month, 12)
+    sin_day,       cos_day       = _cyclic(fecha.weekday(), 7)
+    sin_day_month, cos_day_month = _cyclic(fecha.day,       31)
+    sin_month,     cos_month     = _cyclic(fecha.month,     12)
     fortnight = _is_fortnight(fecha.day)
-    
+
     return np.array(
         [
-            sin_day, cos_day,          
+            sin_day,       cos_day,
             sin_day_month, cos_day_month,
-            sin_month, cos_month,
-            fortnight,                  
-            (temperature - 20.0) / 15.0,  
-            float(weather_code) / 5.0,    
-            float(store_id) / 1000.0,     
+            sin_month,     cos_month,
+            fortnight,
+            (temperature - 20.0) / 15.0,   # normalizado a ~[−1, 1]
+            float(weather_code) / 5.0,      # normalizado a  [0, 1]
+            float(store_id)     / 1000.0,   # escalado a valores pequeños
         ],
         dtype=np.float64,
     )
-    
+
+
 def _df_to_matrix(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     """
     Convierte un DataFrame agregado diario a matrices (X, y) para sklearn.
@@ -130,16 +143,17 @@ def _df_to_matrix(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     rows_X = []
     for _, row in df.iterrows():
         vec = _build_feature_vector(
-            fecha = row["date"],
-            temperature=float(row.get("temperature") or 20.0),
-            weather_code=int(row.get("weather_code") or _DEFAULT_WEATHER_CODE),
-            store_id=int(row["store_id"]),
+            fecha        = row["date"],
+            temperature  = float(row.get("temperature") or 20.0),
+            weather_code = int(row.get("weather_code")  or _DEFAULT_WEATHER_CODE),
+            store_id     = int(row["store_id"]),
         )
         rows_X.append(vec)
-        
+
     X = np.vstack(rows_X)
     y = df["amount"].values.astype(np.float64)
     return X, y
+
 
 def _aggregate_raw_sales(rows: list, columns: list[str]) -> pd.DataFrame:
     """
@@ -150,9 +164,9 @@ def _aggregate_raw_sales(rows: list, columns: list[str]) -> pd.DataFrame:
     """
     if not rows:
         return pd.DataFrame()
-    
+
     df = pd.DataFrame(rows, columns=columns)
-    df["date"] = pd.to_datetime(df["date"]).dt.date
+    df["date"]        = pd.to_datetime(df["date"]).dt.date
     df["temperature"] = pd.to_numeric(df["temperature"], errors="coerce")
 
     # Conversión WMO → código interno. NULLs reciben _DEFAULT_WEATHER_CODE.
@@ -163,9 +177,12 @@ def _aggregate_raw_sales(rows: list, columns: list[str]) -> pd.DataFrame:
     daily = (
         df.groupby(["store_id", "barcode", "date"])
         .agg(
-            amount=("amount", "sum"),
-            temperature=("temperature", "mean"),
-            weather_code=("weather_code", lambda s: int(s.mode().iloc[0]) if not s.dropna().empty else _DEFAULT_WEATHER_CODE),
+            amount      = ("amount",      "sum"),
+            temperature = ("temperature", "mean"),
+            weather_code = (
+                "weather_code",
+                lambda s: int(s.mode().iloc[0]) if not s.dropna().empty else _DEFAULT_WEATHER_CODE,
+            ),
         )
         .reset_index()
     )
@@ -177,7 +194,8 @@ def _aggregate_raw_sales(rows: list, columns: list[str]) -> pd.DataFrame:
 
     return daily
 
-# Funciones de Extracción
+# ── Funciones de Extracción ───────────────────────────────────────────────────
+
 def extract_historic_sales(barcode: str) -> tuple[np.ndarray, np.ndarray]:
     """
     Extrae TODO el historial de ventas para un barcode (modo Cold Start).
@@ -188,18 +206,19 @@ def extract_historic_sales(barcode: str) -> tuple[np.ndarray, np.ndarray]:
         WHERE barcode = :barcode
         ORDER BY date ASC, store_id ASC
     """)
-    
+
     with get_session() as session:
         result = session.execute(query, {"barcode": barcode})
-        rows = result.fetchall()
-    
+        rows   = result.fetchall()
+
     if not rows:
         logger.debug(f"  Sin historial para barcode={barcode}")
         return np.empty((0, N_FEATURES)), np.empty(0)
-    
-    cols = ["store_id", "barcode", "date", "amount", "temperature", "weather_resume_wmo_code"]
+
+    cols  = ["store_id", "barcode", "date", "amount", "temperature", "weather_resume_wmo_code"]
     daily = _aggregate_raw_sales(rows, cols)
     return _df_to_matrix(daily)
+
 
 def extract_recently_sales(
     barcode: str,
@@ -208,27 +227,28 @@ def extract_recently_sales(
     """
     Extrae ventas de los últimos N días para entrenamiento incremental.
     """
-    days = days or _settings.training_window_days
+    days         = days or _settings.training_window_days
     cut_off_date = date.today() - timedelta(days=days)
-    
+
     query = text("""
         SELECT store_id, barcode, date, amount, temperature, weather_resume_wmo_code
         FROM sales_database
-        WHERE barcode = :barcode
-          AND date >= :cut_off_date
+        WHERE barcode  = :barcode
+          AND date    >= :cut_off_date
         ORDER BY date ASC, store_id ASC
     """)
-    
+
     with get_session() as session:
         result = session.execute(query, {"barcode": barcode, "cut_off_date": cut_off_date})
-        rows = result.fetchall()
-        
+        rows   = result.fetchall()
+
     if not rows:
         return np.empty((0, N_FEATURES)), np.empty(0)
-    
-    cols = ["store_id", "barcode", "date", "amount", "temperature", "weather_resume_wmo_code"]
+
+    cols  = ["store_id", "barcode", "date", "amount", "temperature", "weather_resume_wmo_code"]
     daily = _aggregate_raw_sales(rows, cols)
     return _df_to_matrix(daily)
+
 
 def build_features_inference(
     fecha: date,
@@ -242,14 +262,15 @@ def build_features_inference(
     weather_code ya debe ser el código interno (0-5), no el WMO raw.
     """
     vec = _build_feature_vector(
-        fecha=fecha,
-        temperature=temperature,
-        weather_code=weather_code,
-        store_id=store_id,
+        fecha        = fecha,
+        temperature  = temperature,
+        weather_code = weather_code,
+        store_id     = store_id,
     )
-    return vec.reshape(1, -1) 
+    return vec.reshape(1, -1)
 
-# Funciones de Consulta
+# ── Funciones de Consulta ─────────────────────────────────────────────────────
+
 def get_historical_average(barcode: str, store_id: int) -> float:
     """
     Calcula el promedio diario de ventas del último mes para una tienda y producto.
@@ -262,21 +283,36 @@ def get_historical_average(barcode: str, store_id: int) -> float:
         FROM (
             SELECT date, SUM(amount) AS daily_total
             FROM sales_database
-            WHERE barcode   = :barcode
-              AND store_id  = :store_id
-              AND date      >= :cut_off_date
+            WHERE barcode  = :barcode
+              AND store_id = :store_id
+              AND date     >= :cut_off_date
             GROUP BY date
         ) sub
     """)
 
     with get_session() as session:
-        result = session.execute(
+        result  = session.execute(
             query,
             {"barcode": barcode, "store_id": store_id, "cut_off_date": cut_off_date},
         )
         average = result.scalar()
 
     return float(average or 0.0)
+
+
+def get_weekly_average(barcode: str, store_id: int) -> float:
+    """
+    Calcula el promedio semanal de ventas del último mes para una tienda y producto.
+
+    Implementado como promedio_diario × 7, matemáticamente equivalente a promediar
+    los totales semanales sobre el mismo período de referencia (30 días).
+
+    El resultado se redondea a 2 decimales para evitar ruido de punto flotante
+    en el almacenamiento y en la presentación al usuario.
+
+    Retorna 0.0 si no hay datos de ventas en el período.
+    """
+    return round(get_historical_average(barcode, store_id) * 7.0, 2)
 
 
 def count_barcode_examples(barcode: str) -> int:
