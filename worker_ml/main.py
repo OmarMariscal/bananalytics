@@ -136,7 +136,7 @@ def main() -> None:
             logger.error(f"💥 Intento {attempt}/{_MAX_TRYS} falló: {e}")
             if attempt < _MAX_TRYS:
                 logger.info(f"⏳ Reintentando en {_SECONDS_WAIT // 60} minutos...")
-                time.sleep(_settings) 
+                time.sleep(_SECONDS_WAIT) 
             else:
                 logger.critical("💀 Todos los intentos fallaron. Revisar logs y estado de Neon.")
                 sys.exit(1)

@@ -32,13 +32,13 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
-from logger import get_logger
-from settings import get_settings
+from utils import get_logger
+from config import get_settings
 
 logger = get_logger(__name__)
 _settings = get_settings()
 
-# ── Motor de base de datos ──────────────────────────────────────────────────
+# Motor de base de datos 
 
 # NullPool: Neon es serverless. Conexiones persistentes se cobran y pueden
 # agotarse. NullPool abre y cierra una conexión por operación, perfecta para
@@ -71,7 +71,7 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
-# ── Estructuras de datos tipadas ─────────────────────────────────────────────
+# Estructuras de datos tipadas 
 
 @dataclass(frozen=True)
 class StoreRecord:
@@ -146,7 +146,7 @@ class CategoryStats:
     featured_count: int
 
 
-# ── Consultas a la base de datos ─────────────────────────────────────────────
+# Consultas a la base de datos
 
 def verify_connection() -> bool:
     """
@@ -270,7 +270,7 @@ def get_upcoming_predictions(store_id: int, days: int = 7) -> list[PredictionRow
     return predictions
 
 
-# ── Funciones de agregación puras ────────────────────────────────────────────
+# Funciones de agregación puras
 
 def _get_summary_rows(predictions: list[PredictionRow]) -> list[PredictionRow]:
     """

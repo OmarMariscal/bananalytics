@@ -52,10 +52,10 @@ class Settings(BaseSettings):
     donde se omiten intencionalmente para permitir pruebas sin credenciales.
     """
 
-    # ── Base de datos (siempre requerida) ──────────────────────────────────────
+    # Base de datos (siempre requerida)
     database_url: PostgresDsn
 
-    # ── SMTP (requeridos solo cuando DRY_RUN=false) ────────────────────────────
+    # SMTP (requeridos solo cuando DRY_RUN=false)
     # Usa str con default "" para que Pydantic no rechace strings vacíos
     # provenientes de secrets no configurados en GitHub Actions.
     # La validación de presencia se realiza en el model_validator `check_smtp`.
@@ -67,11 +67,11 @@ class Settings(BaseSettings):
     smtp_from_name: str = "BanAnalytics Reportes"
     smtp_use_tls: bool = True
 
-    # ── Parámetros del reporte ─────────────────────────────────────────────────
+    # Parámetros del reporte
     report_days: int = 7       # Días de predicciones futuras a incluir
     max_featured: int = 10     # Máx. filas en la sección "Alertas Prioritarias"
 
-    # ── Lectura de configuración ────────────────────────────────────────────────
+    # Lectura de configuración
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -79,7 +79,7 @@ class Settings(BaseSettings):
         extra="ignore",         # Ignora variables de entorno no declaradas aquí
     )
 
-    # ── Pre-validadores (mode="before"): operan sobre el valor raw del env ─────
+    # Pre-validadores (mode="before"): operan sobre el valor raw del env
 
     @field_validator("smtp_port", mode="before")
     @classmethod
@@ -96,7 +96,7 @@ class Settings(BaseSettings):
             return 587
         return v
 
-    # ── Validadores de campo ───────────────────────────────────────────────────
+    # Validadores de campo
 
     @field_validator("smtp_port")
     @classmethod
@@ -136,7 +136,7 @@ class Settings(BaseSettings):
             )
         return v
 
-    # ── Validador de modelo (mode="after"): opera sobre el objeto completo ─────
+    # Validador de modelo (mode="after"): opera sobre el objeto completo
 
     @model_validator(mode="after")
     def _check_smtp_when_not_dry_run(self) -> "Settings":

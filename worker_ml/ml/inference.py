@@ -179,7 +179,12 @@ def get_store_predictions(
                 )
 
                 pred_raw = float(model.predict(future_X)[0])
-                pred     = round(max(0, pred_raw))   # int ✅
+                pred     = int(round(max(0, min(pred_raw, 9_999))))  # cap en 9,999 unidades/día
+                if pred_raw > 9_999:
+                    logger.warning(
+                        f"    ⚠️  Predicción fuera de rango ({pred_raw:.0f}) para "
+                        f"barcode={barcode} store={store_id} — recortada a {pred}"
+                    )
 
                 is_outstanding, type_, porcentual_desviation = _classify(pred, average)
 
@@ -189,11 +194,11 @@ def get_store_predictions(
                     product_name=info["product_name"],
                     category=info["category"],
                     image_url=info["image_url"],
-                    objetive_date=obj_date,
-                    prediction=pred,                                         # Integer ✅
+                    objective_date=obj_date,
+                    prediction=pred,                                        
                     feature=is_outstanding,
                     type=type_,
-                    percentage_average_deviation=porcentual_desviation,      # Float ✅
+                    percentage_average_deviation=porcentual_desviation,      
                 ))
 
             # DELETE + INSERT atómico

@@ -35,12 +35,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# ── Garantiza que los módulos del worker se encuentran en el path ─────────────
+# Garantiza que los módulos del worker se encuentran en el path
 # Necesario al ejecutar el script directamente desde la raíz del repo o desde
 # un directorio diferente a worker_reports/.
 sys.path.insert(0, str(Path(__file__).parent))
 
-from db_queries import (
+from db.db_queries import (
     StoreRecord,
     compute_category_breakdown,
     compute_weekly_stats,
@@ -48,10 +48,10 @@ from db_queries import (
     get_upcoming_predictions,
     verify_connection,
 )
-from logger import get_logger
-from mailer import send_report
-from renderer import render_report_pdf, render_report_html
-from settings import get_settings
+from utils.logger import get_logger
+from services.mailer import send_report
+from services.renderer import render_report_pdf, render_report_html
+from config.settings import get_settings
 
 logger = get_logger("test_single_report")
 
@@ -114,12 +114,12 @@ def cmd_send_report(
         logger.info("💾 El PDF será guardado en disco para inspección visual")
     print("─" * 60 + "\n")
 
-    # ── 1. Verificar conexión ─────────────────────────────────────────────────
+    # 1. Verificar conexión
     if not verify_connection():
         logger.error("❌ Sin conexión a Neon. Verifica DATABASE_URL en .env")
         sys.exit(1)
 
-    # ── 2. Buscar la tienda solicitada ────────────────────────────────────────
+    # 2. Buscar la tienda solicitada
     all_stores = get_all_active_stores()
     store: StoreRecord | None = next(
         (s for s in all_stores if s.store_id == store_id), None
@@ -139,7 +139,7 @@ def cmd_send_report(
         f"({store.city}) — {store.email}"
     )
 
-    # ── 3. Si se indica override_email, crear un StoreRecord modificado ───────
+    # 3. Si se indica override_email, crear un StoreRecord modificado
     # StoreRecord es frozen=True, así que se crea una copia con dataclasses.replace
     # para no modificar el objeto original de la base de datos.
     if override_email:
@@ -147,7 +147,7 @@ def cmd_send_report(
         store = replace(store, email=override_email)
         logger.info(f"📧 Email sobreescrito para esta prueba: {store.email}")
 
-    # ── 4. Obtener predicciones ───────────────────────────────────────────────
+    # 4. Obtener predicciones
     logger.info(f"🔍 Consultando predicciones (próximos {_settings.report_days} días)...")
     predictions = get_upcoming_predictions(
         store_id=store.store_id,
@@ -167,7 +167,7 @@ def cmd_send_report(
 
     logger.info(f"✅ {len(predictions)} filas de predicción encontradas.")
 
-    # ── 5. Calcular estadísticas ──────────────────────────────────────────────
+    # 5. Calcular estadísticas
     logger.info("📊 Calculando métricas agregadas...")
     stats = compute_weekly_stats(
         predictions=predictions,
@@ -182,7 +182,7 @@ def cmd_send_report(
         f"   Alertas prioritarias: {stats.unique_featured_products}"
     )
 
-    # ── 6. Renderizar PDF ─────────────────────────────────────────────────────
+    # 6. Renderizar PDF
     logger.info("🖨  Renderizando PDF...")
     pdf_bytes = render_report_pdf(
         store=store,
@@ -192,18 +192,18 @@ def cmd_send_report(
     )
     logger.info(f"✅ PDF generado: {len(pdf_bytes) / 1024:.1f} KB")
 
-    # ── 7. Guardar PDF en disco (opcional) ────────────────────────────────────
+    # 7. Guardar PDF en disco (opcional)
     if save_pdf:
         pdf_filename = (
             f"test_reporte_tienda_{store.store_id}_"
-            f"{now.strftime('%Y%m%d_%H%M%S')}.pdf"
+            f"{now.strftime('%Y%m%d_%H%M%S')}.pdf" # <-- Volver a poner .pdf
         )
         pdf_path = Path(__file__).parent / pdf_filename
         pdf_path.write_bytes(pdf_bytes)
         logger.info(f"💾 PDF guardado en: {pdf_path.resolve()}")
         logger.info("   Ábrelo con cualquier visor PDF para verificar el diseño.")
 
-    # ── 8. Enviar correo ──────────────────────────────────────────────────────
+    # 8. Enviar correo
     logger.info(f"\n📧 Enviando correo a {store.email}...")
     success = send_report(
         store=store,
@@ -250,7 +250,7 @@ def main() -> None:
 
     subparsers = parser.add_subparsers(dest="command")
 
-    # ── Subcomando: --list-stores ─────────────────────────────────────────────
+    # Subcomando: --list-stores 
     # También disponible como flag directo para comodidad
     parser.add_argument(
         "--list-stores",
@@ -258,7 +258,7 @@ def main() -> None:
         help="Lista todas las tiendas con email registrado en la base de datos.",
     )
 
-    # ── Argumentos para envío ─────────────────────────────────────────────────
+    # Argumentos para envío 
     parser.add_argument(
         "--store-id",
         type=int,
@@ -287,7 +287,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # ── Enrutamiento de comandos ──────────────────────────────────────────────
+    # Enrutamiento de comandos
     if args.list_stores:
         cmd_list_stores()
         return

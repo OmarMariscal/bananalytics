@@ -1,7 +1,7 @@
 #  BanAnalytics — Worker Reports · GitHub Actions
 #
 #  Microservicio de Reportes Semanales (RF-08)
-#  ─────────────────────────────────────────────────────────────────────────────
+#  ─────────────────────────
 #  Ejecuta el pipeline completo de generación y envío de reportes PDF:
 #    1. Conecta a Neon y consulta predicciones de los próximos 7 días.
 #    2. Por cada tienda registrada: genera un PDF personalizado con Jinja2
@@ -89,11 +89,11 @@ jobs:
         working-directory: ./worker_reports
 
     steps:
-      # ── 1. Checkout del repositorio ──────────────────────────────────────────
+      #  1. Checkout del repositorio
       - name: 📥 Checkout del repositorio
         uses: actions/checkout@v4
 
-      # ── 2. Dependencias del sistema para WeasyPrint ───────────────────────────
+      #  2. Dependencias del sistema para WeasyPrint 
       # WeasyPrint no es una librería Python pura: depende de libpango para el
       # renderizado de texto y libgdk-pixbuf para el manejo de imágenes.
       # Sin este step, WeasyPrint falla en la importación con:
@@ -112,7 +112,7 @@ jobs:
         # fonts-liberation y fonts-dejavu-core garantizan que WeasyPrint tenga
         # fuentes del sistema disponibles como fallback si Google Fonts no carga.
 
-      # ── 3. Configurar Python 3.11 ─────────────────────────────────────────────
+      #  3. Configurar Python 3.11 
       - name: 🐍 Configurar Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -120,13 +120,13 @@ jobs:
           cache: "pip"
           cache-dependency-path: worker_reports/requirements.txt
 
-      # ── 4. Instalar dependencias Python ───────────────────────────────────────
+      #  4. Instalar dependencias Python 
       - name: 📦 Instalar dependencias Python
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ── 5. Verificar instalación de WeasyPrint ────────────────────────────────
+      #  5. Verificar instalación de WeasyPrint 
       # Step de diagnóstico temprano: si WeasyPrint no puede importarse correctamente
       # (falta de dependencias del sistema), este step fallará con un mensaje claro
       # antes de intentar el pipeline principal.
@@ -139,32 +139,32 @@ jobs:
           print('✅ Renderizador HTML disponible.')
           "
 
-      # ── 6. Ejecutar Worker Reports ────────────────────────────────────────────
+      #  6. Ejecutar Worker Reports 
       - name: 📊 Ejecutar Worker Reports
         env:
-          # ── Secrets de base de datos ──────────────────────────────────────────
+          #  Secrets de base de datos
           DATABASE_URL:    ${{ secrets.DATABASE_URL }}
 
-          # ── Secrets SMTP ──────────────────────────────────────────────────────
+          #  Secrets SMTP 
           SMTP_HOST:       ${{ secrets.SMTP_HOST }}
           SMTP_PORT:       ${{ secrets.SMTP_PORT }}
           SMTP_USER:       ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD:   ${{ secrets.SMTP_PASSWORD }}
 
-          # ── Variables de configuración (con defaults sensatos) ────────────────
+          # Variables de configuración (con defaults sensatos)
           SMTP_FROM:       ${{ vars.SMTP_FROM      || 'reportes@bananalytics.com' }}
           SMTP_FROM_NAME:  ${{ vars.SMTP_FROM_NAME || 'BanAnalytics Reportes' }}
           SMTP_USE_TLS:    ${{ vars.SMTP_USE_TLS   || 'true' }}
           REPORT_DAYS:     ${{ vars.REPORT_DAYS    || '7' }}
           MAX_FEATURED:    ${{ vars.MAX_FEATURED   || '10' }}
 
-          # ── Modo prueba (workflow_dispatch únicamente) ────────────────────────
+          #  Modo prueba (workflow_dispatch únicamente) 
           # DRY_RUN=true hace que main.py genere los PDFs pero no llame a mailer.py.
           # Implementación: main.py lee esta variable y la pasa a send_report().
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: python main.py
 
-      # ── 7. Resumen del run ────────────────────────────────────────────────────
+      # 7. Resumen del run 
       # Se ejecuta siempre (incluso si el step anterior falla) para proveer
       # contexto en los logs de GitHub Actions.
       - name: 📋 Resumen del run
@@ -178,13 +178,3 @@ jobs:
           echo "  Estado : ${{ job.status }}"
           echo "  Dry Run: ${{ github.event.inputs.dry_run || 'false' }}"
           echo "════════════════════════════════════════════════"
-
-# ── 8. Guardar PDFs generados como Artefactos ─────────────────────────────
-      # Se ejecuta desde la raíz del repo, por eso especificamos la carpeta
-      - name: 💾 Guardar reportes PDF para revisión
-        uses: actions/upload-artifact@v4
-        if: always() # Queremos que los guarde incluso si el envío de correo falla
-        with:
-          name: reportes-bananalytics-run-${{ github.run_number }}
-          path: worker_reports/*.pdf 
-          retention-days: 5

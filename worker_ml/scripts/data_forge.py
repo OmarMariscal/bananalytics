@@ -41,7 +41,7 @@ STORES: list[dict] = [
     {"owner_name": "José Madero",   "email": "jose@abarrotesgdl.com", "city": "Guadalajara",      "latitude": 20.6534, "longitude": -103.3440},
     {"owner_name": "Laura Pergolizzi",      "email": "lp@tiendacdmx.com",    "city": "Ciudad de México",  "latitude": 19.4326, "longitude": -99.1332},
     {"owner_name": "Till Lindelman",  "email": "rammst@miscelamty.com",  "city": "Monterrey",         "latitude": 25.6866, "longitude": -100.3161},
-    {"owner_name": "Ana Flores",       "email": "ana@abarrotespue.com",    "city": "Puebla",            "latitude": 19.0414, "longitude": -98.2063},
+    {"owner_name": "Angel sin acento en la a",       "email": "correodepruebas2164@gmail.com",    "city": "Puebla",            "latitude": 19.0414, "longitude": -98.2063},
     {"owner_name": "Jorge Ramírez",    "email": "jorge@tiendacun.com",     "city": "Cancún",            "latitude": 21.1619, "longitude": -86.8515},
 ]
 
