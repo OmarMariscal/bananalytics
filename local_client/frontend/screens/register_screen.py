@@ -1,7 +1,9 @@
 import flet as ft
 import re
 from frontend.components.btn_validate import PrimaryButton
+from frontend.components.loading_dialog import LoadingDialog
 from shared.models.user import User
+import time
 
 class RegisterScreen(ft.Column):
     def __init__(self, backend_service, on_success):
@@ -13,6 +15,8 @@ class RegisterScreen(ft.Column):
         self.bgcolor = "#F9F7F2"
         self.expand = True
         self.alignment = ft.MainAxisAlignment.CENTER
+
+        self.loading_dialog = LoadingDialog("Registrando usuario, por favor espera...")
 
         self.logo_bananalytics = ft.Image(
             src="/logo_only.png",
@@ -38,6 +42,7 @@ class RegisterScreen(ft.Column):
             height=50,
             label_style=ft.TextStyle(color="#8D7A66"),
             hint_style=ft.TextStyle(color="#C1B5A9"),
+            color="#2D2114"
         )
 
         self.email = ft.TextField(
@@ -50,6 +55,7 @@ class RegisterScreen(ft.Column):
             height=50,
             label_style=ft.TextStyle(color="#8D7A66"),
             hint_style=ft.TextStyle(color="#C1B5A9"),
+            color="#2D2114"
         )
 
         self.error_name = ft.Text("", color="red", size=11, visible=False)
@@ -58,22 +64,6 @@ class RegisterScreen(ft.Column):
         self.btn_registro =  PrimaryButton(
             texto_usuario = "Finalizar Registro",
             accion_click = self._validar_y_enviar
-        )
-
-        self.loading_dialog = ft.AlertDialog(
-            modal=True,
-            bgcolor="white",
-            content=ft.Container(
-                padding=ft.padding.all(10),
-                content=ft.Row(
-                    controls=[
-                        ft.ProgressRing(color="#C0843F", stroke_width=3, width=30, height=30),
-                        ft.Text("Registrando usuario, por favor espera...", size=14, color="#4A3F35")
-                    ],
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    spacing=20
-                )
-            )
         )
 
         self.location_note = ft.Container(
@@ -99,16 +89,16 @@ class RegisterScreen(ft.Column):
         )
 
         self.success_dialog = ft.AlertDialog(
-            title=ft.Text("¡Registro Exitoso!", color="black"),
-            content=ft.Text("", color="black"),
-            bgcolor="#FFFFFF",
+            title=ft.Text("¡Registro Exitoso!", color=ft.colors.ON_SURFACE, weight="bold"),
+            content=ft.Text("", color=ft.colors.ON_SURFACE, weight="bold"),
+            bgcolor = ft.colors.ON_SURFACE_VARIANT,
             actions=[ft.TextButton("Continuar", on_click=self._close_dialog)],
         )
         
         self.error_dialog = ft.AlertDialog(
-            title=ft.Text("Ha ocurrido algo...",color="black"),
-            content=ft.Text("", color="black"),
-            bgcolor="#FFFFFF",
+            title=ft.Text("Ha ocurrido algo...", color=ft.colors.ON_SURFACE, weight="bold"),
+            content=ft.Text("", color=ft.colors.ON_SURFACE, weight="bold"),
+            bgcolor = ft.colors.ON_SURFACE_VARIANT,
             actions=[ft.TextButton("Continuar", on_click=self._close_dialog)],
         )
 
@@ -184,6 +174,7 @@ class RegisterScreen(ft.Column):
             new_user = User(name=name, email=email)
             self.status = self.backend_service.register_user(new_user)
             self.loading_dialog.open = False
+            self.page.update()
 
             if self.status.get('status'):
                 self.name.value = ""
@@ -226,8 +217,7 @@ class RegisterScreen(ft.Column):
         
         if self.status.get('status'):
             self.page.clean()
-            self.page.dialog = None
-            self.page.update()
+            time.sleep(0.1)
             self.on_success()
 
         

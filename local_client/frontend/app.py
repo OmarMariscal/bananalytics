@@ -7,6 +7,9 @@ class App:
     def __init__(self, svc: BackendProtocol, page: ft.Page):
         self.svc = svc
 
+        self.page = page
+        page.window_maximized = True
+
         page.theme = ft.Theme(
             color_scheme=ft.ColorScheme(
                 background="#FF8400",
@@ -29,32 +32,46 @@ class App:
             )
         )
         
-        self.page = page
 
         if self.svc.is_first_start():
             self._show_register()
             return
 
-        self._iniciar_dashboard_completo()
+        self._start_layout()
 
-    def _iniciar_dashboard_completo(self):
+    def _start_layout(self):
+        pantalla_carga = ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.ProgressRing(color="#C38441", stroke_width=5),
+                    ft.Text(
+                        "Construyendo interfaz, por favor espera...", 
+                        size=25, 
+                        color=ft.colors.ON_SURFACE, 
+                        weight="bold")
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=20
+            ),
+            expand=True,
+            alignment=ft.alignment.center,
+            bgcolor=ft.colors.BACKGROUND
+        )
+        
+        self.page.add(pantalla_carga)
+        self.page.update()
 
-        self.stats = self.svc.get_dashboard_stats()
-        self.config = self.svc.get_app_stats()
-        self.alerts = self.svc.get_alerts()
         self.layout = MainLayout(self.page, backend_service=self.svc)
-        self._show_dashboard()
+        self.page.clean()
+        self.page.add(self.layout)
+        self.page.update()
 
     def _show_register(self):
         self.page.clean()
         registro = RegisterScreen(
             backend_service=self.svc,
-            on_success=self._iniciar_dashboard_completo
+            on_success=self._start_layout
         )
         self.page.add(registro)
-        self.page.update()
-
-    def _show_dashboard(self):
-        self.page.clean()
-        self.page.add(self.layout) 
         self.page.update()

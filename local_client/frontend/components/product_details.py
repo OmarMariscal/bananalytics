@@ -1,24 +1,25 @@
 import flet as ft
-import datetime
+from datetime import datetime
 from frontend.components.marquesin_text import TextoMarquesina
+from frontend.components.loading_dialog import LoadingDialog
 
 class ProductDetailDialog(ft.AlertDialog):
     def __init__(self, alert, page, backend_service):
         super().__init__()
         self.alert = alert
-        self.main_page = page
+        self.page = page
         self.backend_service = backend_service
         
         self.modal = True
         self.shape = ft.RoundedRectangleBorder(radius=20)
         self.content_padding = 0
-        
-        date_str = self.alert.objective_date.strftime("%b %d, %Y")
+
+
 
         self.product_name_display = TextoMarquesina(
             texto=self.alert.product_name, 
             ancho_max=200,
-            size_text=24,
+            size_text=28,
             color=ft.colors.ON_SURFACE
         )
 
@@ -196,13 +197,27 @@ class ProductDetailDialog(ft.AlertDialog):
         )
 
     def _build_sales_chart(self):
-        history_data = self.backend_service.get_sales_history(self.alert.barcode)
+        self.loading_dialog = LoadingDialog("Obteniendo historial de ventas, por favor espera...")
+        self.page.dialog = self.loading_dialog
+        self.loading_dialog.open = True
+        self.page.update()
+
+        full_history = self.backend_service.get_sales_history(self.alert.barcode)
+
+        history_data = full_history[-90:] 
         
+        self.loading_dialog.open = False
+        self.page.update()
+
+        if len(history_data) < 3:
+            return ft.Container(
+                content=ft.Text("No hay historial disponible", color="#8D7A66"),
+                alignment=ft.alignment.center
+            )
+
         volumes = [data["volume"] for data in history_data]
         max_volume = max(volumes) if volumes else 100
-        
         top_y = int(max_volume * 1.3)
-        
         if top_y < 10: top_y = 10
 
         data_points = []
@@ -224,14 +239,43 @@ class ProductDetailDialog(ft.AlertDialog):
             ),
         )
 
-        y_labels = []
-        for y_val in range(0, top_y + 1, 10):
-            y_labels.append(
-                ft.ChartAxisLabel(
-                    value=y_val, 
-                    label=ft.Text(str(y_val), size=12, color="#8D7A66")
+        total_puntos = len(history_data)
+        
+        if total_puntos <= 15:
+            INTERVALO_MANUAL = 1
+        elif total_puntos <= 30:
+            INTERVALO_MANUAL = 2
+        elif total_puntos <= 45:
+            INTERVALO_MANUAL = 3
+        elif total_puntos <= 60:
+            INTERVALO_MANUAL = 4
+        elif total_puntos <= 75:
+            INTERVALO_MANUAL = 5
+        else:
+            INTERVALO_MANUAL = 6
+        
+        x_labels = []
+        for i, data in enumerate(history_data):
+            if i % INTERVALO_MANUAL == 0:
+                try:
+                    fecha_obj = datetime.strptime(data["date"], "%Y-%m-%d")
+                    fecha_display = fecha_obj.strftime("%d %b")
+                except:
+                    fecha_display = data["date"]
+                x_labels.append(
+                    ft.ChartAxisLabel(
+                        value=i,
+                        label=ft.Container(
+                            content=ft.Text(
+                                fecha_display, 
+                                size=10, 
+                                weight="bold", 
+                                color="#8D7A66"
+                            ),
+                            padding=ft.padding.only(top=5),
+                        )
+                    )
                 )
-            )
 
         chart = ft.LineChart(
             data_series=[chart_line],
@@ -240,28 +284,26 @@ class ProductDetailDialog(ft.AlertDialog):
             vertical_grid_lines=ft.ChartGridLines(color="#F0EFE9", width=0.5),
             
             left_axis=ft.ChartAxis(
-                labels=y_labels,
-                labels_interval=10,
-                title=ft.Text("Cantidad", color="#8D7A66", size=17, weight="bold"),
-                title_size=45,
+                labels=[
+                    ft.ChartAxisLabel(value=0, label=ft.Text("0", size=11, color="#8D7A66")),
+                    ft.ChartAxisLabel(value=top_y/2, label=ft.Text(f"{int(top_y/2)}", size=11, color="#8D7A66")),
+                    ft.ChartAxisLabel(value=top_y, label=ft.Text(f"{top_y}", size=11, color="#8D7A66")),
+                ],
+                labels_size=40,
+                title=ft.Text("Cantidad", color="#8D7A66", size=14, weight="bold"),
+                title_size=40,
             ),
             
             bottom_axis=ft.ChartAxis(
-                labels_size=40, 
-                labels=[
-                    ft.ChartAxisLabel(
-                        value=i, 
-                        label=ft.Container(
-                            content=ft.Text(data["date"], size=10, color=ft.colors.ON_SURFACE),
-                            rotate=ft.Rotate(angle=-1), 
-                            padding=ft.padding.only(top=20)
-                        )
-                    ) for i, data in enumerate(history_data)
-                ],
-                labels_interval=1, 
+                labels=x_labels,
+                labels_size=50,
+                labels_interval=1,
             ),
+            
             min_y=0,
             max_y=top_y,
             expand=True,
+            interactive=True,
         )
+
         return chart
