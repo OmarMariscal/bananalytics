@@ -191,7 +191,7 @@ def get_store_predictions(
             model, _, model_rmse = load_or_create_model(barcode)
 
             daily_avg    = get_historical_average(barcode, store_id)
-            avg_weekly   = round(daily_avg * 7.0, 2)
+            avg_weekly   = int(round(daily_avg * 7.0, 2))
             margin       = int(round(model_rmse))
 
             news: list[Prediccion] = []

@@ -16,7 +16,7 @@ Decisiones de diseño:
   - weather_resume_wmo_code: Integer WMO — coherencia con Open-Meteo en producción.
   - prediction: Integer — las unidades a vender son siempre enteras.
   - percentage_average_deviation: Float — variación % para diagnóstico y frontend.
-  - avg_weekly_sales: Float — promedio semanal de ventas del último mes (diario × 7).
+  - avg_weekly_sales: Int — promedio semanal de ventas del último mes (diario × 7).
     Permite al cliente final contextualizar la predicción frente al ritmo habitual.
   - margin_of_error: Integer — RMSE del modelo redondeado a unidades del producto.
     Expresa el desvío típico: la venta real estará en el rango
@@ -129,7 +129,7 @@ class Prediccion(Base):
     percentage_average_deviation = Column(Float,   nullable=False)       # Variación % RF-05
 
     # ── Contexto de ventas y calidad del modelo ───────────────────────────────
-    avg_weekly_sales = Column(Float,   nullable=False, default=0.0)
+    avg_weekly_sales = Column(Integer,   nullable=False, default=0)
     # Promedio de ventas semanales del último mes para esta (tienda, producto).
     # Base de referencia que el cliente usa para interpretar la predicción
     # en el contexto del volumen habitual del negocio.
@@ -138,7 +138,6 @@ class Prediccion(Base):
     # RMSE del modelo en unidades del producto, redondeado al entero más próximo.
     # Rango de confianza de la predicción:
     #   ventas_reales ∈ [prediction − margin_of_error, prediction + margin_of_error]
-    # ─────────────────────────────────────────────────────────────────────────
 
     tienda   = relationship("Tienda",   back_populates="predicciones")
     producto = relationship("Producto", back_populates="predicciones")
