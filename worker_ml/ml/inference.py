@@ -3,38 +3,49 @@ Motor de Inferencia — BanAnalytics Worker ML.
 
 Implementa las Tareas 4.1, 4.2 y 4.3 de la arquitectura:
   · Obtiene pronóstico de clima de Open-Meteo para los próximos N días.
-  · Predice ventas por (tienda, producto, día).
-  · Clasifica cada predicción como DÉFICIT / SUPERÁVIT / NONE (RF-05).
+  · Predice ventas diarias internas y las agrega a un total semanal.
+  · Clasifica cada predicción semanal como DÉFICIT / SUPERÁVIT / NONE (RF-05).
   · Limpia las predicciones viejas e inserta las nuevas en prediction_database.
 
-─── Fórmulas implementadas ──────────────────────────────────────────────────
+─── Modelo de predicción ─────────────
 
-RF-05 (Variación porcentual):
-    Variación = ((P − V_p) / V_p) × 100
+  El worker genera UN registro por (tienda, producto) con:
 
-    donde:
-      P   = predicción del modelo (Integer ≥ 0)
-      V_p = promedio diario de ventas del último mes (Float)
+    objective_date  = hoy + prediction_days
+      Fecha horizonte de la ventana de predicción. Informa al cliente hasta
+      qué día aplica el pronóstico.
 
-─── Campos de contexto y calidad por predicción ─────────────────────────────
+    prediction      = Σ predicciones_diarias[día 1..N]
+      Total de unidades esperadas a vender durante la semana completa.
+      Cada día se predice internamente con su propio vector de features
+      (clima, día de semana, quincena…) y se suman al final.
 
-    avg_weekly_sales  = V_p × 7
-      Promedio semanal de ventas del último mes en esa (tienda, producto).
-      Calculado una sola vez por (barcode, store_id) antes del bucle de días
-      para evitar N consultas idénticas a la BD.
+    avg_weekly_sales = promedio_diario × prediction_days
+      Volumen habitual de referencia del último mes para esta (tienda, producto).
+      Base de la clasificación RF-05 y contexto para el cliente.
 
-    margin_of_error   = round(model_rmse)
-      RMSE del modelo recuperado de models_database vía load_or_create_model,
-      sin consulta adicional a la BD. Expresa en unidades enteras cuánto puede
-      desviarse la predicción por encima o por abajo.
+    margin_of_error = round(√N × RMSE_modelo)
+      Margen de error semanal derivado del RMSE diario del modelo.
+      Estadísticamente preciso para errores independientes entre días:
+        RMSE_semanal = √(Σ RMSE_día²) = √(N × RMSE²) = √N × RMSE
+      Interpretación para el cliente:
+        ventas_reales ∈ [prediction − margin_of_error, prediction + margin_of_error]
 
-─── Manejo de ZeroDivisionError (RF-05 explícito) ───────────────────────────
-    Si V_p = 0 y P > 0 → SUPERÁVIT atípico, feature=True.
-    Si V_p = 0 y P = 0 → NONE, feature=False.
+─── Fórmula RF-05 (Variación porcentual) ──────────────
+
+    Variación = ((prediction − avg_weekly_sales) / avg_weekly_sales) × 100
+
+    La comparación es semanal vs semanal, por lo que los umbrales configurados
+    en settings (deficit_threshould, superavit_threshould) aplican sin ajuste.
+
+─── Manejo de ZeroDivisionError (RF-05 explícito) ─────
+    Si avg_weekly = 0 y prediction > 0 → SUPERÁVIT atípico, feature=True.
+    Si avg_weekly = 0 y prediction = 0 → NONE, feature=False.
 """
 
 from __future__ import annotations
 
+import math
 from datetime import date, timedelta
 
 import numpy as np
@@ -57,7 +68,13 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 _settings = get_settings()
 
-# ── Cliente Open-Meteo ────────────────────────────────────────────────────────
+#  Constantes 
+
+# Cap de seguridad por día antes de agregar al total semanal.
+# Evita que un día con predicción desbocada infle el total semanal.
+_MAX_DAILY_PRED = 9_999
+
+#  Cliente Open-Meteo 
 
 def _build_openmeteo_client() -> openmeteo_requests.Client:
     cached_session = requests_cache.CachedSession(".cache_openmeteo", expire_after=3_600)
@@ -67,7 +84,7 @@ def _build_openmeteo_client() -> openmeteo_requests.Client:
 
 _openmeteo_client = _build_openmeteo_client()
 
-# ── Obtención de forecast ─────────────────────────────────────────────────────
+#  Obtención de forecast 
 
 def get_climate_forecast(lat: float, lon: float) -> list[dict]:
     """
@@ -113,29 +130,38 @@ def get_climate_forecast(lat: float, lon: float) -> list[dict]:
             f"Usando forecast por defecto."
         )
         return [
-            {"date": date.today() + timedelta(days=i), "temperatura": 22.0, "weather_code": 1}
+            {
+                "date":         date.today() + timedelta(days=i),
+                "temperatura":  22.0,
+                "weather_code": 1,
+            }
             for i in range(_settings.prediction_days)
         ]
 
-# ── Clasificación RF-05 ───────────────────────────────────────────────────────
+#  Clasificación RF-05 
 
 def _classify(
     prediction: int,
-    historical_average: float,
+    weekly_average: float,
 ) -> tuple[bool, TipoAlerta, float]:
     """
-    Aplica la fórmula RF-05 y retorna (es_destacado, tipo, variacion_pct).
+    Aplica la fórmula RF-05 comparando predicción semanal vs promedio semanal.
+
+    La escala semanal vs semanal garantiza que los umbrales configurados en
+    settings (deficit_threshould, superavit_threshould) apliquen sin ajuste.
+
+    Retorna: (es_destacado, tipo_alerta, variacion_porcentual)
 
     Manejo explícito de ZeroDivisionError según el ERS:
-      V_p = 0 y P > 0 → SUPERÁVIT atípico, feature=True.
-      V_p = 0 y P = 0 → NONE, feature=False.
+      avg_weekly = 0 y prediction > 0 → SUPERÁVIT atípico, feature=True.
+      avg_weekly = 0 y prediction = 0 → NONE, feature=False.
     """
-    if historical_average <= 0:
+    if weekly_average <= 0:
         if prediction > 0:
             return True, TipoAlerta.superavit, float("inf")
         return False, TipoAlerta.none, 0.0
 
-    variation = ((prediction - historical_average) / historical_average) * 100.0
+    variation = ((prediction - weekly_average) / weekly_average) * 100.0
 
     if variation <= _settings.deficit_threshould:
         return True, TipoAlerta.deficit, variation
@@ -144,7 +170,55 @@ def _classify(
 
     return False, TipoAlerta.none, variation
 
-# ── Generación de predicciones por tienda ────────────────────────────────────
+#  Agregación semanal 
+
+def _aggregate_weekly_prediction(
+    model,
+    forecast: list[dict],
+    store_id: int,
+    barcode: str,
+) -> int:
+    """
+    Predice las ventas de cada día del forecast y devuelve el total semanal.
+
+    Cada día se predice de forma independiente con su propio vector de features
+    (clima, día de semana, quincena…), aplicando el cap diario de seguridad.
+    El total es la suma de los N valores diarios.
+
+    Args:
+        model:    SGDRegressor ya entrenado para este barcode.
+        forecast: Lista de dicts con date, temperatura y weather_code por día.
+        store_id: ID de la tienda — incluido en el vector de features.
+        barcode:  Solo para logging en caso de predicción fuera de rango.
+
+    Returns:
+        Total de unidades predichas para la semana (entero ≥ 0).
+    """
+    weekly_total = 0
+
+    for day in forecast:
+        future_X = build_features_inference(
+            fecha        = day["date"],
+            temperature  = day["temperatura"],
+            weather_code = day["weather_code"],
+            store_id     = store_id,
+        )
+
+        pred_raw = float(model.predict(future_X)[0])
+        pred_day = int(round(max(0, min(pred_raw, _MAX_DAILY_PRED))))
+
+        if pred_raw > _MAX_DAILY_PRED:
+            logger.warning(
+                f"    ⚠️  Predicción diaria fuera de rango ({pred_raw:.0f}) · "
+                f"barcode={barcode} store={store_id} fecha={day['date']} "
+                f"— recortada a {pred_day}"
+            )
+
+        weekly_total += pred_day
+
+    return weekly_total
+
+# Generación de predicciones por tienda
 
 def get_store_predictions(
     store_id: int,
@@ -153,19 +227,26 @@ def get_store_predictions(
     barcodes: list[str],
 ) -> int:
     """
-    Genera y persiste predicciones de los próximos N días para todos los productos
-    de una tienda, usando el clima local vía Open-Meteo.
+    Genera y persiste UNA predicción semanal por producto para una tienda.
 
-    Por cada (barcode, store_id) se calculan una sola vez antes del bucle de días:
-      · daily_avg      → promedio diario del último mes (base para RF-05).
-      · avg_weekly     → daily_avg × 7 (contexto semanal para el cliente).
-      · margin_of_error → RMSE del modelo, recuperado de models_database sin
-                          consulta adicional a la BD gracias al tercer elemento
-                          retornado por load_or_create_model.
+    Flujo por cada barcode:
+      1. Carga el modelo y su RMSE desde models_database (sin consulta extra a BD).
+      2. Calcula el promedio semanal de ventas del último mes.
+      3. Predice las ventas de cada día del forecast y las suma → total semanal.
+      4. Calcula margin_of_error = round(√N × RMSE).
+      5. Clasifica el total semanal contra el promedio semanal (RF-05).
+      6. DELETE + INSERT atómico del registro de esa (tienda, producto).
 
-    Retorna el número total de predicciones insertadas.
+    Args:
+        store_id: ID de la tienda.
+        lat, lon: Coordenadas para el forecast de Open-Meteo.
+        barcodes: Lista de barcodes a procesar.
+
+    Returns:
+        Número de predicciones insertadas (una por barcode exitoso).
     """
-    forecast = get_climate_forecast(lat, lon)
+    forecast       = get_climate_forecast(lat, lon)
+    objective_date = date.today() + timedelta(days=_settings.prediction_days)
 
     with get_session() as session:
         productos_lista = session.query(Producto).filter(Producto.barcode.in_(barcodes)).all()
@@ -187,45 +268,34 @@ def get_store_predictions(
             continue
 
         try:
-            # ── Métricas por (barcode, store_id) — calculadas una sola vez ──
+            #  Modelo y margen de error semanal — sin consulta extra a la BD 
             model, _, model_rmse = load_or_create_model(barcode)
+            margin               = int(round(math.sqrt(_settings.prediction_days) * model_rmse))
 
-            daily_avg    = get_historical_average(barcode, store_id)
-            avg_weekly   = int(round(daily_avg * 7.0, 2))
-            margin       = int(round(model_rmse))
+            #  Referencia histórica semanal 
+            daily_avg  = get_historical_average(barcode, store_id)
+            avg_weekly = int(round(daily_avg * _settings.prediction_days, 2))
 
-            news: list[Prediccion] = []
+            #  Predicción agregada de la semana 
+            weekly_pred = _aggregate_weekly_prediction(model, forecast, store_id, barcode)
 
-            for day in forecast:
-                obj_date:     date  = day["date"]
-                temperature:  float = day["temperatura"]
-                weather_code: int   = day["weather_code"]
+            #  Clasificación RF-05 (semanal vs semanal) 
+            is_outstanding, type_, pct_deviation = _classify(weekly_pred, avg_weekly)
 
-                future_X = build_features_inference(
-                    fecha        = obj_date,
-                    temperature  = temperature,
-                    weather_code = weather_code,
-                    store_id     = store_id,
-                )
+            #  DELETE + INSERT atómico 
+            with get_session() as session:
+                session.query(Prediccion).filter_by(
+                    store_id=store_id, barcode=barcode
+                ).delete(synchronize_session=False)
 
-                pred_raw = float(model.predict(future_X)[0])
-                pred     = int(round(max(0, min(pred_raw, 9_999))))
-                if pred_raw > 9_999:
-                    logger.warning(
-                        f"    ⚠️  Predicción fuera de rango ({pred_raw:.0f}) para "
-                        f"barcode={barcode} store={store_id} — recortada a {pred}"
-                    )
-
-                is_outstanding, type_, pct_deviation = _classify(pred, daily_avg)
-
-                news.append(Prediccion(
+                session.add(Prediccion(
                     store_id                     = store_id,
                     barcode                      = barcode,
                     product_name                 = info["product_name"],
                     category                     = info["category"],
                     image_url                    = info["image_url"],
-                    objective_date               = obj_date,
-                    prediction                   = pred,
+                    objective_date               = objective_date,
+                    prediction                   = weekly_pred,
                     feature                      = is_outstanding,
                     type                         = type_,
                     percentage_average_deviation = pct_deviation,
@@ -233,14 +303,7 @@ def get_store_predictions(
                     margin_of_error              = margin,
                 ))
 
-            # DELETE + INSERT atómico por (store_id, barcode)
-            with get_session() as session:
-                session.query(Prediccion).filter_by(
-                    store_id=store_id, barcode=barcode
-                ).delete(synchronize_session=False)
-                session.bulk_save_objects(news)
-
-            inserted += len(news)
+            inserted += 1
 
         except Exception as e:
             logger.error(
