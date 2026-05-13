@@ -10,7 +10,8 @@ class PredictionAlert(BaseModel):
     image_url: str
     objective_date: date
     prediction: int           
-    avg_weekly_sales: float
+    avg_weekly_sales: int
     percentage_average_deviation: float = 0.0
+    margin_of_error: int = 0
     type: Literal["superavit", "deficit", "none"]
     feature: bool | None = None
