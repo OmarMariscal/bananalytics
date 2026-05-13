@@ -89,8 +89,8 @@ class ConfigManager:
 
             #Mapeamos el Diccionario a nuestro Modelo de Datos
             return ConfigStats(
-                user_name=perfil.get("owner_name", "Usuario"),
-                email=perfil.get("email", ""),
+                user_name=perfil.get("owner_name"),
+                email=perfil.get("email"),
                 theme_mode=True,
                 current_date=date.today()
             )

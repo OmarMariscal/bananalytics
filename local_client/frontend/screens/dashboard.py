@@ -2,32 +2,81 @@ import flet as ft
 import datetime
 from datetime import datetime
 from frontend.components.product_details import ProductDetailDialog
+from frontend.components.marquesin_text import TextoMarquesina
+from frontend.components.loading_dialog import LoadingDialog
+from frontend.components.help import HelpIcon
 
 class Dashboard(ft.Container):
-    def __init__(self, backend_service, page):
+    def __init__(self, page, recharge, stats, alerts, backend_service, status_fetched):
         super().__init__()
-        self.main_page = page
+        self.page = page
+        self.dashboard_stats = stats
+        self.list_alerts = alerts
         self.backend_service = backend_service
         self.expand = True
         self.padding = 0
+        self.recharge = recharge
+        self.status_fetched = status_fetched
+        self.is_online = False
+        self.label = ""
+        
+        self.date = ""
+        self.status_button = ft.Container(on_click=self._handle_sync)
+        
+        self.main_content = ft.Container(
+            content=ft.ProgressRing(), 
+            alignment=ft.alignment.center,
+            expand=True
+        )
+        self.content = self.main_content
 
-        self.list_alerts = self.backend_service.get_alerts()
-        now = datetime.now()
-        now = datetime.now()
+    def did_mount(self):
+        self._initial_load()
+        
+    def _initial_load(self):
+        try:
+            self._fetch_data_from_server()
+            self._build_ui_content()
+        except Exception as e:
+            print(f"Error: {e}")
+        finally:
+            self.page.update()
+            self.update()
 
+    def _update_status_ui(self):
+        # SOLO pregunta al servidor si es la primera vez
+        if not self.status_fetched:
+            self.loading_dialog = LoadingDialog("Obteniendo estatus del servidor, por favor espera...")
+            self.loading_dialog.open = True
+            self.page.dialog = self.loading_dialog
+            self.page.update()
+            
+            # Petición real al servidor
+            self.is_online = self.backend_service.get_server_status()
+            self.status_fetched = True # Marcamos que ya tenemos el dato
+            
+            self.loading_dialog.open = False
+            self.page.update()
+        
+        # El resto del código usa self.is_online (ya sea nuevo o guardado)
+        color_bg = "#E8FCE8" if self.is_online else "#FCE8E8"
+        color_text = "#2E7D32" if self.is_online else "#C85050"
+        self.label = "● Online" if self.is_online else "● Offline"
+
+        self.status_button.content = ft.Text(self.label, size=12, color=color_text, weight="bold")
+        self.status_button.bgcolor = color_bg
+        self.status_button.padding = ft.padding.symmetric(horizontal=12, vertical=6)
+        self.status_button.border_radius = 15
+        self.status_button.on_hover = lambda e: self._on_button_hover(e, color_bg)
+
+    def _fetch_data_from_server(self):
         dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
         meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+        now = datetime.now()
+        self.date = f"{dias_semana[now.weekday()]}, {meses[now.month - 1]} {now.day}, {now.year}"
 
-        nombre_dia = dias_semana[now.weekday()]
-        nombre_mes = meses[now.month - 1]
-        dia_num = now.day
-        anio = now.year
-
-        self.date = f"{nombre_dia}, {nombre_mes} {dia_num}, {anio}"
-                
-        self.status_button = ft.Container(on_click=self._handle_sync)
+    def _build_ui_content(self):
         self._update_status_ui()
-
         self.content = ft.Row(
             controls=[
                 self._build_left_section(),
@@ -37,61 +86,36 @@ class Dashboard(ft.Container):
             spacing=0
         )
 
-    def _update_status_ui(self):
-        """Actualiza los colores y texto del botón de estatus basado en el backend"""
-        is_online = self.backend_service.get_server_status()
-        
-        color_bg = "#E8FCE8" if is_online else "#FCE8E8"
-        color_text = "#2E7D32" if is_online else "#C85050"
-        label = "● Online" if is_online else "● Offline"
+    def _handle_sync(self, e):
+        self.loading_dialog = LoadingDialog("Intentando sincronizar con el servidor, por favor espera...")
+        self.loading_dialog.open = True
+        self.page.dialog = self.loading_dialog
+        self.page.update()
 
-        self.status_button.content = ft.Text(label, size=12, color=color_text, weight="bold")
-        self.status_button.bgcolor = color_bg
-        self.status_button.padding = ft.padding.symmetric(horizontal=12, vertical=6)
-        self.status_button.border_radius = 15
+        is_sync = False
+        try:
+            is_sync = self.backend_service.sync()
+            if is_sync:
+                self.status_fetched = False # Forzamos que la próxima carga consulte al server
+                self.recharge() 
+                return
+            else:
+                self._show_error_dialog()
+                
+        except Exception as ex:
+            print(f"Error de sincronización: {ex}")
+            self.loading_dialog.open = False
+            self.page.update()
         
-        self.status_button.on_hover = lambda e: self._on_button_hover(e, color_bg)
+        if not is_sync and self.page:
+            self._build_ui_content()
+            self.update()
 
     def _on_button_hover(self, e, original_bg):
         e.control.bgcolor = ft.colors.BLACK12 if e.data == "true" else original_bg
         
         if e.control.page:
             e.control.update()
-
-    def _handle_sync(self, e):
-        """Función que se ejecuta al presionar el botón Online/Offline"""
-        is_sync = self.backend_service.sync()
-
-        if is_sync:
-            self.list_alerts = self.backend_service.get_alerts()
-            self._update_status_ui()
-            
-            self.content.controls = [
-                self._build_left_section(),
-                self._build_right_section()
-            ]
-            self.update()
-        else:
-            def close_dlg(e):
-                confirm_dialog.open = False
-                self.main_page.update()
-
-            confirm_dialog = ft.AlertDialog(
-                modal=True,
-                title=ft.Text("Error de Conexión"),
-                content=ft.Text(
-                    "No se pudo establecer comunicación con el servidor.\n"
-                    "Por favor, verifica tu conexión a internet o intenta más tarde."
-                ),
-                actions=[
-                    ft.TextButton("Entendido", on_click=close_dlg),
-                ],
-                actions_alignment=ft.MainAxisAlignment.END,
-            )
-
-            self.main_page.dialog = confirm_dialog
-            confirm_dialog.open = True
-            self.main_page.update()
 
     def _build_left_section(self):
         return ft.Container(
@@ -106,17 +130,22 @@ class Dashboard(ft.Container):
                             ft.Text(self.date, size=14, color="#8D7A66"),
                         ], spacing=2),
                         
-                        self.status_button
+                        ft.Row([
+                            self.status_button,
+                            HelpIcon(help_id= 1 if self.label == "● Online" else 2 )
+                        ],)
                         
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     
                     ft.Divider(height=20, color="transparent"),
 
                     ft.Row([
-                        self._stat_card("Escaneos Totales del Día", "1,247", "/icon_scaner.png", "#FDF3E7"),
-                        self._stat_card("Predicciones Activas", "23", "/icon_spyco.png", "#E8FCE8"),
-                        self._stat_card("Sincronizaciones Offline Pendientes", "8", "/icon_sky.png", "#FDF3E7"),
+                        self._stat_card("Escaneos Totales del Día", self.dashboard_stats["total_scans_today"], "/icon_scaner.png", "#FDF3E7"),
+                        self._stat_card("Predicciones Activas", self.dashboard_stats["active_predictions"], "/icon_spyco.png", "#E8FCE8"),
+                        self._stat_card("Sincronizaciones Offline Pendientes", self.dashboard_stats["pending_syncs"], "/icon_sky.png", "#FDF3E7"),
                     ], spacing=20),
+
+                    
                     
                     ft.Container(
                         expand=True,
@@ -148,8 +177,16 @@ class Dashboard(ft.Container):
             padding=10,
             content=ft.Column(
                 controls=[
-                    ft.Text("Panel de productos", size=18, weight="bold", color=ft.colors.ON_SURFACE),
-                    ft.Text("AI-powered demand predictions", size=12, color="#8D7A66"),
+                    ft.Row(
+                        controls=[
+                            ft.Column([
+                                ft.Text("Panel de productos", size=18, weight="bold", color=ft.colors.ON_SURFACE),
+                                ft.Text("AI-powered demand predictions", size=12, color="#8D7A66"),
+                            ], alignment=ft.MainAxisAlignment.START),
+                            HelpIcon(help_id= 3 )
+                        ], alignment=ft.MainAxisAlignment.SPACE_EVENLY
+                    ),
+                    
                     ft.Divider(height=20, color="transparent"),
                     
                     ft.ListView(
@@ -179,7 +216,7 @@ class Dashboard(ft.Container):
             dialog = ProductDetailDialog(alert, self.page, self.backend_service)
             self.page.overlay.append(dialog)
             dialog.open = True
-            self.main_page.update()
+            self.page.update()
 
         if alert.type == "deficit":
             badge_bg, badge_color, badge_text = "#FCE8E8", "#D32F2F", f"Déficit: {alert.prediction} units"
@@ -187,6 +224,13 @@ class Dashboard(ft.Container):
             badge_bg, badge_color, badge_text = "#E8FCE8", "#2E7D32", f"Superávit: {alert.prediction} units"
         else:
             badge_bg, badge_color, badge_text = "#F0EFE9", "#8D7A66", "Estable"
+
+        product_name_display = TextoMarquesina(
+            texto=alert.product_name, 
+            ancho_max=140,
+            size_text=14,
+            color=ft.colors.ON_SURFACE
+        )
 
         return ft.Container(
             bgcolor=ft.colors.SURFACE_VARIANT,
@@ -214,7 +258,7 @@ class Dashboard(ft.Container):
                     ),
                     ft.Column(
                         controls=[
-                            ft.Text(alert.product_name, weight="bold", size=14, color=ft.colors.ON_SURFACE),
+                            product_name_display,
                             ft.Row([
                                 ft.Image("/icon_calendar.png", width=12),
                                 ft.Text(alert.objective_date.strftime("%b %d, %Y"), size=11, color="#8D7A66")
@@ -269,7 +313,7 @@ class Dashboard(ft.Container):
 
         top_deviations = sorted(deviation_data, key=lambda x: x["abs_dev"], reverse=True)[:25]
         num_items = len(top_deviations)
-        dynamic_width = 40 if num_items < 5 else 25 if num_items < 15 else 15
+        dynamic_width = 600 / num_items
 
         bar_groups = []
         for i, item in enumerate(top_deviations):
@@ -318,8 +362,8 @@ class Dashboard(ft.Container):
                     ft.ChartAxisLabel(
                         value=i, 
                         label=ft.Container(
-                            content=ft.Text(item["name"][:10], size=10, color="#8D7A66"),
-                            rotate=ft.Rotate(angle=-1.1), 
+                            content=ft.Text(item["name"][:12], size=10, color="#8D7A66"),
+                            rotate=ft.Rotate(angle=-0.5), 
                             padding=ft.padding.only(top=10)
                         )
                     ) for i, item in enumerate(top_deviations)

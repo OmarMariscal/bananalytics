@@ -80,17 +80,10 @@ class ApiClient:
 
     #Traemos de la API toda la informacion que Rogi ocupe para el dashboard
     def get_dashboard_data(self, store_id: str) -> dict:
-<<<<<<< Updated upstream
-        
-    #Trae todas las predicciones, alertas y resumenes de ventas para rellenar
-        #la pantalla principal de la aplicacion.
-        
-=======
 
     #Trae todas las predicciones, alertas y resumenes de ventas para rellenar
         #la pantalla principal de la aplicacion.
 
->>>>>>> Stashed changes
         url = f"{self.base_url}/business/{store_id}/predictions" #Ruta con el id de la tienda inyectado para identificar que datos enviar
         headers = {
             "X-API-Key": self.api_key,
@@ -106,17 +99,10 @@ class ApiClient:
 
     #Viaja a la API para traer toda la informacion de un solo producto
     def get_product_data(self, store_id: str, barcode: str) -> dict:
-<<<<<<< Updated upstream
-        
-        #Viaja a la API para traer el historial detallado y las predicciones
-        #de un unico producto escaneado.
-        
-=======
 
         #Viaja a la API para traer el historial detallado y las predicciones
         #de un unico producto escaneado.
 
->>>>>>> Stashed changes
         url = f"{self.base_url}/business/{store_id}/{barcode}"
         headers = {
             "X-API-Key": self.api_key,

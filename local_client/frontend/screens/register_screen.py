@@ -1,7 +1,9 @@
 import flet as ft
 import re
 from frontend.components.btn_validate import PrimaryButton
+from frontend.components.loading_dialog import LoadingDialog
 from shared.models.user import User
+import time
 
 class RegisterScreen(ft.Column):
     def __init__(self, backend_service, on_success):
@@ -14,8 +16,10 @@ class RegisterScreen(ft.Column):
         self.expand = True
         self.alignment = ft.MainAxisAlignment.CENTER
 
+        self.loading_dialog = LoadingDialog("Registrando usuario, por favor espera...")
+
         self.logo_bananalytics = ft.Image(
-            src="/logo_with_letters.png",
+            src="/logo_only.png",
             width=80,
             height=80,
             fit="contain"
@@ -31,21 +35,27 @@ class RegisterScreen(ft.Column):
         self.name = ft.TextField(
             label="Nombre completo",
             hint_text="e.g., Margarita López",
-            border_color="#E0D7C6",
+            border_color="#F3E6D5",
             bgcolor="#FDFBF9",
             on_change=self._text_validate,
             text_size=14,
             height=50,
+            label_style=ft.TextStyle(color="#8D7A66"),
+            hint_style=ft.TextStyle(color="#C1B5A9"),
+            color="#2D2114"
         )
 
         self.email = ft.TextField(
             label="Correo electronico",
             hint_text="e.g., support@bananalytics.com",
-            border_color="#E0D7C6",
+            border_color="#F3E6D5",
             bgcolor="#FDFBF9",
             on_change=self._email_validate,
             text_size=14,
             height=50,
+            label_style=ft.TextStyle(color="#8D7A66"),
+            hint_style=ft.TextStyle(color="#C1B5A9"),
+            color="#2D2114"
         )
 
         self.error_name = ft.Text("", color="red", size=11, visible=False)
@@ -79,16 +89,16 @@ class RegisterScreen(ft.Column):
         )
 
         self.success_dialog = ft.AlertDialog(
-            title=ft.Text("¡Registro Exitoso!"),
-            content=ft.Text(""),
-            bgcolor="#C0843F",
+            title=ft.Text("¡Registro Exitoso!", color=ft.colors.ON_SURFACE, weight="bold"),
+            content=ft.Text("", color=ft.colors.ON_SURFACE, weight="bold"),
+            bgcolor = ft.colors.ON_SURFACE_VARIANT,
             actions=[ft.TextButton("Continuar", on_click=self._close_dialog)],
         )
         
         self.error_dialog = ft.AlertDialog(
-            title=ft.Text("Ha ocurrido algo..."),
-            content=ft.Text(""),
-            bgcolor="#C0843F",
+            title=ft.Text("Ha ocurrido algo...", color=ft.colors.ON_SURFACE, weight="bold"),
+            content=ft.Text("", color=ft.colors.ON_SURFACE, weight="bold"),
+            bgcolor = ft.colors.ON_SURFACE_VARIANT,
             actions=[ft.TextButton("Continuar", on_click=self._close_dialog)],
         )
 
@@ -99,7 +109,7 @@ class RegisterScreen(ft.Column):
             padding=30,
             shadow=ft.BoxShadow(
                 blur_radius=15,
-                color=ft.Colors.with_opacity(0.1, "black"),
+                color=ft.colors.with_opacity(0.1, "black"),
             ),
             content=ft.Column(
                 controls=[
@@ -145,7 +155,7 @@ class RegisterScreen(ft.Column):
             self.name.border_color = "red"
         else:
             self.error_name.visible = False
-            self.name.border_color = ft.Colors.BLACK
+            self.name.border_color="#F3E6D5"
 
         validate_email = bool(re.match(patron, email))
         if not validate_email:
@@ -154,12 +164,18 @@ class RegisterScreen(ft.Column):
             self.email.border_color = "red"
         else:
             self.error_email.visible = False
-            self.email.border_color = ft.Colors.BLACK
+            self.email.border_color = "#F3E6D5"
 
         if validate_name and validate_email:
+            self.page.dialog = self.loading_dialog
+            self.loading_dialog.open = True
+            self.page.update()
+
             new_user = User(name=name, email=email)
             self.status = self.backend_service.register_user(new_user)
-            
+            self.loading_dialog.open = False
+            self.page.update()
+
             if self.status.get('status'):
                 self.name.value = ""
                 self.email.value = ""
@@ -181,14 +197,14 @@ class RegisterScreen(ft.Column):
             self.name.border_color = "red"
         else:
             self.error_name.visible = False
-            self.name.border_color=ft.Colors.BLACK
+            self.name.border_color="#F3E6D5"
         
         self.page.update()
 
     def _email_validate(self, e):
 
         self.error_email.visible = False
-        self.email.border_color = ft.Colors.BLACK
+        self.email.border_color = "#F3E6D5"
         self.page.update()
 
     def _close_dialog(self, e):
@@ -201,8 +217,7 @@ class RegisterScreen(ft.Column):
         
         if self.status.get('status'):
             self.page.clean()
-            self.page.dialog = None
-            self.page.update()
+            time.sleep(0.1)
             self.on_success()
 
         

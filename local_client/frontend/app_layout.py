@@ -1,16 +1,14 @@
 import flet as ft
 from frontend.screens.dashboard import Dashboard
 from frontend.screens.products import Products
-from shared.models.info_config import ConfigStats
-import time
+from frontend.components.loading_dialog import LoadingDialog
 
 class MainLayout(ft.Container):
     def __init__(self, page: ft.Page, backend_service):
         super().__init__()
         
-        self.main_page = page
+        self.page = page
         self.backend_service = backend_service
-        self.stats = self.backend_service.get_app_stats()
         self.expand = True
         self.bgcolor = "transparent"
 
@@ -18,18 +16,92 @@ class MainLayout(ft.Container):
             expand=True,
             padding=0,
         )
+        
+        self.user_popup = self._user_popup()
 
-        new_dashboard = Dashboard(self.backend_service, self.main_page)
-        new_products = Products(self.backend_service, self.main_page)
+        self.dashboard_stats = ""
+        self.list_alerts = []
+        self.status_fetched = False
 
-        self.dynamic_content.content = new_dashboard
+        self._get_stats()
+        self.new_dashboard = Dashboard(self.page, self._sync, self.dashboard_stats, self.list_alerts, self.backend_service, self.status_fetched)
+        self.new_products = Products(self.page, self.list_alerts)
+
+        self.dynamic_content.content = self.new_dashboard
+
+        self.sidebar = ft.Container(
+            width=70,
+            bgcolor="#2D2114",
+            padding=ft.padding.symmetric(vertical=20, horizontal=0),
+            content=ft.Column(
+                controls=[
+                    ft.Row([
+                        ft.Container(
+                            content=ft.Image(
+                                src="/logo_only.png",
+                                width=30,
+                                fit="contain"
+                            ),
+                            bgcolor="#61492D",
+                            border=ft.border.all(1, "#A78E73"),
+                            border_radius=8,
+                            padding=ft.padding.all(8),
+                            width=45,
+                            height=45,
+                        ),
+                    ],
+                        alignment=ft.MainAxisAlignment.CENTER,
+                    ),
+                    ft.Container(height=30),
+
+                    self._sidebar_button(
+                        "/icon_dashboard.png",
+                        "dashboard"
+                    ),
+
+                    self._sidebar_button(
+                        "/icon_products.png",
+                        "products"
+                    ),
+
+                    self._sidebar_button_user("/icon_user.png")
+                ],
+                spacing=10,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER
+            )
+        )
+
+        self.content = ft.Stack([
+            ft.Row([self.sidebar, self.dynamic_content], expand=True, spacing=0),
+            self.user_popup
+        ], expand=True)
+    
+    def _get_stats(self):
+        self.loading_dialog.actualizar_mensaje("Cargando informacion de stats, por favor espera...")
+        self.page.update()
+        self.dashboard_stats = self.backend_service.get_dashboard_stats()
+        self.loading_dialog.actualizar_mensaje("Cargando lista de productos, por favor espera...")
+        self.list_alerts = self.backend_service.get_alerts()
+        self.loading_dialog.open = False
+        self.page.update()
+
+    def _user_popup(self):
+        self.loading_dialog = LoadingDialog("Cargando información de usuario, por favor espera...")
+        self.loading_dialog.open = True
+        self.page.dialog = self.loading_dialog
+        self.page.update()
+
+        self.stats = self.backend_service.get_app_stats()
+
+        self.loading_dialog.open = False
+        self.page.update()
 
         self.txt_user_name = ft.Text(f"{self.stats.user_name}", weight="bold", size=20, color=ft.colors.ON_SURFACE)
         self.txt_email = ft.Text(f"{self.stats.email}", size=12, color="#8D7A66")
         self.txt_theme_title = ft.Text("Cambiar tema", expand=True, weight="bold", size=14, color=ft.colors.ON_SURFACE)
         self.txt_support_title = ft.Text("Contacto y soporte", size=14, weight="w500", color=ft.colors.ON_SURFACE)
 
-        self.user_popup = ft.Container(
+        return ft.Container(
             content=ft.Column([
                 self.txt_user_name,
                 self.txt_email,
@@ -62,59 +134,16 @@ class MainLayout(ft.Container):
             top=150,
             on_hover=self._handle_popup_hover
         )
-        
-        self.sidebar = ft.Container(
-            width=70,
-            bgcolor="#2D2114",
-            padding=ft.padding.symmetric(vertical=20, horizontal=0),
-            content=ft.Column(
-                controls=[
-                    ft.Row([
-                        ft.Container(
-                            content=ft.Image(
-                                src="/logo_only.png",
-                                width=30,
-                                fit="contain"
-                            ),
-                            bgcolor="#61492D",
-                            border=ft.border.all(1, "#A78E73"),
-                            border_radius=8,
-                            padding=ft.padding.all(8),
-                            width=45,
-                            height=45,
-                        ),
-                    ],
-                        alignment=ft.MainAxisAlignment.CENTER,
-                    ),
-                    ft.Container(height=30),
 
-                    self._sidebar_button(
-                        "/icon_dashboard.png",
-                        new_dashboard
-                    ),
-
-                    self._sidebar_button(
-                        "/icon_products.png",
-                        new_products
-                    ),
-
-                    self._sidebar_button_user("/icon_user.png")
-                ],
-                spacing=10,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER
-            )
-        )
-
-        self.content = ft.Stack([
-            ft.Row([self.sidebar, self.dynamic_content], expand=True, spacing=0),
-            self.user_popup
-        ], expand=True)
-
-    def _update_content(self, new_view: ft.Control):
-        self.dynamic_content.content = new_view
+    def _update_content(self, view_name: str):
+        if view_name == "dashboard":
+            self.dynamic_content.content = self.new_dashboard
+        elif view_name == "products":
+            self.dynamic_content.content = self.new_products
+            
         self.dynamic_content.update()
 
-    def _sidebar_button(self, icon_path, destination_view):
+    def _sidebar_button(self, icon_path, view_name: str):
         return ft.Container(
             content=ft.Image(src=icon_path, width=60, fit="contain"),
             width=50,
@@ -122,7 +151,7 @@ class MainLayout(ft.Container):
             padding=10,
             border_radius=10,
             on_hover=lambda e: self._handle_hover(e),
-            on_click=lambda _: self._update_content(destination_view),
+            on_click=lambda _: self._update_content(view_name),
         )
 
     def _handle_hover(self, e):
@@ -159,6 +188,44 @@ class MainLayout(ft.Container):
         else:
             self.page.theme_mode = ft.ThemeMode.DARK
             
+        self.page.update()
+    
+    def _sync(self):
+        try:
+            self.loading_dialog = LoadingDialog("Cargando informacion de stats, por favor espera...")
+            self.loading_dialog.open = True
+            self.page.dialog = self.loading_dialog
+            self.page.update()
+            self.dashboard_stats = self.backend_service.get_dashboard_stats()
+            self.loading_dialog.actualizar_mensaje("Cargando lista de productos, por favor espera...")
+            self.page.update()
+            self.list_alerts = self.backend_service.get_alerts_prob()
+            self.data_loaded = False
+            self.page.update()
+
+            self.new_dashboard = Dashboard(self.page, self._sync, self.dashboard_stats, self.list_alerts, self.backend_service, self.status_fetched)
+            self.new_products = Products(self.page, self.list_alerts)
+
+            self.dynamic_content.content = self.new_dashboard
+        finally:
+            self.loading_dialog.open = False
+            self.page.update()
+            self.update()
+    
+    def _show_error_dialog(self):
+        def close_dlg(e):
+            confirm_dialog.open = False
+            self.page.update()
+
+        confirm_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Error de Conexión", color=ft.colors.ON_SURFACE, weight="bold"),
+            content=ft.Text("No se pudo establecer comunicación con el servidor.", color=ft.colors.ON_SURFACE, weight="bold"),
+            actions=[ft.TextButton("Entendido", on_click=close_dlg)],
+            bgcolor = ft.colors.ON_SURFACE_VARIANT
+        )
+        self.page.dialog = confirm_dialog
+        confirm_dialog.open = True
         self.page.update()
 
     

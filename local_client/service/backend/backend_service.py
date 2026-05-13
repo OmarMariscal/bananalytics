@@ -5,10 +5,9 @@ from shared.models.user import User
 from service.backend.db.sqlite_manager import SQLiteManager
 from service.backend.sync.sync import SyncDaemon
 from service.backend.config.config_manager import ConfigManager
-from local_client.service.backend.peticiones_api import ApiClient
+from service.backend.peticiones_api import ApiClient
 from datetime import datetime, date
-from local_client.service.backend.scanner_listener import ScannerListener
-from shared.utils.validators import Validators
+from service.backend.scanner_listener import ScannerListener
 import os
 
 
@@ -102,7 +101,7 @@ class BackendService: #Activa todas las herramientas, si no es primer inicio, ar
 
             #Mapeo de DTO al Modelo de Dominio
             nueva_alerta = PredictionAlert(
-                product_name=alerta.get("name", "Producto Desconocido"),
+                product_name=alerta.get("product_name", "Producto Desconocido"),
                 barcode=alerta.get("barcode", "000000"),
                 category=alerta.get("category", "General"),
                 image_url=alerta.get("image_url", "https://via.placeholder.com/150"),

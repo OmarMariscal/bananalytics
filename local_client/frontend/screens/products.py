@@ -3,22 +3,22 @@ import datetime
 import unicodedata
 from datetime import datetime
 from frontend.components.product_details import ProductDetailDialog
+from frontend.components.marquesin_text import TextoMarquesina
+from frontend.components.help import HelpIcon
 
 class Products(ft.Container):
-    def __init__(self, backend_service, page):
+    def __init__(self, page, alerts):
         super().__init__()
         self.expand = True 
         self.vertical_alignment = ft.MainAxisAlignment.START
+        self.page = page
         self.height = page.height
         
-        self.backend = backend_service
-        self.main_page = page
-        self.list_alerts_original = self.backend.get_alerts() 
+        self.list_alerts_original = alerts 
         
         self.current_filter = None 
         self.current_sort = None   
 
-        now = datetime.now()
         now = datetime.now()
         # Diccionarios de traducción
         dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
@@ -62,7 +62,7 @@ class Products(ft.Container):
             columns=[
                 ft.DataColumn(ft.Text("Producto", weight="bold", color="#8D7A66")),
                 ft.DataColumn(ft.Text("Código", weight="bold", color="#8D7A66")),
-                ft.DataColumn(ft.Text("Clasificación", weight="bold", color="#8D7A66")),
+                ft.DataColumn(ft.Row([ft.Text("Clasificación", weight="bold", color="#8D7A66"), HelpIcon(help_id= 3 )])),
                 ft.DataColumn(ft.Text("Promedio de ventas", weight="bold", color="#8D7A66")),
                 ft.DataColumn(ft.Text("Prédiccion de ventas", weight="bold", color="#8D7A66")),
             ],
@@ -174,6 +174,13 @@ class Products(ft.Container):
                 bg_color, txt_color, label = "#E8FCE8", "#2D6A4F", "SUPERÁVIT"
             else:
                 bg_color, txt_color, label = "#F5F5F5", "#757575", "ESTABLE"
+            
+            self.product_name_display = TextoMarquesina(
+                texto=alert.product_name, 
+                ancho_max=340,
+                size_text=14,
+                color=ft.colors.ON_SURFACE
+            )
 
             rows.append(
                 ft.DataRow(
@@ -183,7 +190,7 @@ class Products(ft.Container):
                             ft.Row([
                                 ft.Image(src=alert.image_url, width=40, height=40, fit=ft.ImageFit.CONTAIN),
                                 ft.Column([
-                                    ft.Text(alert.product_name, weight="bold", color=ft.colors.ON_SURFACE),
+                                    self.product_name_display,
                                     ft.Row([
                                         ft.Container(content=ft.Image(src="/icon_category.png", width=15, fit="contain")),
                                         ft.Text(alert.category, size=12, color="#8D7A66")
@@ -218,7 +225,7 @@ class Products(ft.Container):
         return rows
 
     def _open_details_dialog(self, alert_obj):
-        dialog = ProductDetailDialog(alert_obj, self.main_page, self.backend)
-        self.main_page.dialog = dialog
+        dialog = ProductDetailDialog(alert_obj, self.page, self.backend)
+        self.page.dialog = dialog
         dialog.open = True
-        self.main_page.update()
+        self.page.update()
