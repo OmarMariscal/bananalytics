@@ -10,6 +10,9 @@ Responsabilidades:
   3. Consultas SQL parametrizadas y seguras (sin concatenación de strings).
   4. Funciones de agregación puras que operan sobre los datos ya extraídos,
      manteniendo la lógica de negocio fuera de las consultas SQL.
+  5. Gestión del ciclo de vida de reports_database: creación idempotente de la
+     tabla, inserción de nuevos reportes y limpieza automática de históricos
+     según la política de retención de 3 meses (~13 reportes por tienda).
 
 ─── Estructura de prediction_database (campos consultados) ───────────────────
   store_id, barcode, product_name, category, image_url,
@@ -18,6 +21,24 @@ Responsabilidades:
   Los campos product_name, category e image_url están desnormalizados en la
   tabla de predicciones (decisión de diseño del worker_ml), por lo que este
   microservicio NO necesita hacer JOINs con product_database.
+
+─── Estructura de reports_database (gestionada por este módulo) ──────────────
+  report_id    BIGSERIAL PK  — Identificador único autoincremental.
+  store_id     INTEGER FK    — Referencia a stores_database.store_id.
+  created_at   TIMESTAMPTZ   — Marca temporal UTC de generación (criterio de
+                               ordenación; no se usa booleano de "activo").
+  period_from  DATE          — Primer día del horizonte de predicción cubierto.
+  period_to    DATE          — Último día del horizonte de predicción cubierto.
+  pdf_content  BYTEA         — Contenido binario del PDF (~150-300 KB/reporte).
+  file_size_kb INTEGER       — Tamaño en KB (desnormalizado para logs/monitoreo).
+
+  Política de retención: se conservan los 13 reportes más recientes por tienda
+  (≈ 3 meses de generación semanal). El report más reciente se obtiene siempre
+  con ORDER BY created_at DESC LIMIT 1, sin flags booleanos.
+
+  Estimación de almacenamiento por tienda:
+    13 reportes × 250 KB promedio = ~3.25 MB/tienda
+    Muy por debajo del límite acordado de ~7 MB/tienda.
 """
 
 from __future__ import annotations
@@ -25,20 +46,20 @@ from __future__ import annotations
 import math
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Generator
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
-from utils import get_logger
-from config import get_settings
+from utils.logger import get_logger
+from config.settings import get_settings
 
 logger = get_logger(__name__)
 _settings = get_settings()
 
-# Motor de base de datos 
+#  Motor de base de datos 
 
 # NullPool: Neon es serverless. Conexiones persistentes se cobran y pueden
 # agotarse. NullPool abre y cierra una conexión por operación, perfecta para
@@ -49,6 +70,22 @@ _engine = create_engine(
     echo=False,
 )
 _LocalSession = sessionmaker(bind=_engine, autocommit=False, autoflush=False)
+
+#  Política de retención de reportes 
+
+# Número máximo de reportes a conservar por tienda en reports_database.
+#
+# Cálculo: 3 meses × 4.33 semanas/mes = 13 reportes.
+# Se usa 13 (no 12) para garantizar que el trimestre completo quede cubierto
+# incluso en meses de 5 semanas, evitando que el reporte más antiguo del
+# trimestre se elimine prematuramente.
+#
+# Estimación de almacenamiento resultante:
+#   13 reportes × ~250 KB = ~3.25 MB/tienda  →  dentro del límite de 7 MB.
+#
+# Este valor es consultado exclusivamente por save_report(). Si en el futuro
+# se desea ampliar o reducir la retención, este es el único punto de cambio.
+_KEEP_REPORTS_PER_STORE: int = 13
 
 
 @contextmanager
@@ -71,7 +108,7 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
-# Estructuras de datos tipadas 
+#  Estructuras de datos tipadas 
 
 @dataclass(frozen=True)
 class StoreRecord:
@@ -146,7 +183,28 @@ class CategoryStats:
     featured_count: int
 
 
-# Consultas a la base de datos
+#  Dataclass para metadatos de reporte almacenado 
+
+@dataclass(frozen=True)
+class ReportRecord:
+    """
+    Representa los metadatos de un reporte semanal almacenado en reports_database.
+
+    El campo pdf_content se omite intencionalmente: esta estructura se usa
+    para logging y auditoría, no para transportar el binario en memoria.
+    El binario viaja directamente como `bytes` desde renderer.py hasta
+    save_report(), sin pasar por esta clase para evitar copias innecesarias.
+    """
+    report_id:   int
+    store_id:    int
+    created_at:  datetime
+    period_from: date
+    period_to:   date
+    file_size_kb: int
+
+
+#  Consultas a la base de datos 
+
 
 def verify_connection() -> bool:
     """
@@ -202,7 +260,7 @@ def get_all_active_stores() -> list[StoreRecord]:
     return records
 
 
-def get_upcoming_predictions(store_id: int, days: int = 7) -> list[PredictionRow]:
+def get_upcoming_predictions(store_id: int, days: int = _settings.report_days) -> list[PredictionRow]:
     """
     Obtiene todas las predicciones de los próximos N días para una tienda.
 
@@ -220,7 +278,7 @@ def get_upcoming_predictions(store_id: int, days: int = 7) -> list[PredictionRow
         Puede ser vacía si el worker_ml no generó predicciones aún.
     """
     today = date.today()
-    end_date = today + timedelta(days=days)
+    end_date = today + timedelta(days=_settings.report_days)
 
     query = text("""
         SELECT
@@ -265,12 +323,12 @@ def get_upcoming_predictions(store_id: int, days: int = 7) -> list[PredictionRow
 
     logger.debug(
         f"  Tienda {store_id}: {len(predictions)} filas de predicción "
-        f"(próximos {days} días, desde {today} hasta {end_date})"
+        f"(próximos {_settings.report_days} días, desde {today} hasta {end_date})"
     )
     return predictions
 
 
-# Funciones de agregación puras
+#  Funciones de agregación puras 
 
 def _get_summary_rows(predictions: list[PredictionRow]) -> list[PredictionRow]:
     """
@@ -334,7 +392,7 @@ def compute_weekly_stats(
             superavit_products=0,
             neutral_products=0,
             date_range_start=today,
-            date_range_end=today + timedelta(days=7),
+            date_range_end=today + timedelta(days=_settings.report_days),
             summary_rows=[],
             featured_rows_list=[],
         )
@@ -440,3 +498,199 @@ def compute_category_breakdown(predictions: list[PredictionRow]) -> list[Categor
     ]
 
     return sorted(result, key=lambda c: c.total_products, reverse=True)
+
+
+#  Gestión del ciclo de vida de reports_database 
+
+def ensure_reports_table_exists() -> None:
+    """
+    Crea la tabla reports_database en Neon si aún no existe.
+
+    Esta función implementa el patrón DDL idempotente: puede llamarse en cada
+    ejecución del worker sin efectos secundarios si la tabla ya existe.
+    Se invoca una única vez al inicio de main(), inmediatamente después de
+    verify_connection(), garantizando que cualquier ejecución del worker —
+    incluida la primera — encuentra la tabla lista antes de intentar escribir.
+
+    Decisiones de diseño de la tabla:
+      · BIGSERIAL en report_id: anticipación de volumen a largo plazo.
+      · TIMESTAMPTZ en created_at: almacena zona horaria (UTC en producción).
+        Es el único criterio de ordenación para determinar el reporte más
+        reciente. No se usa ningún flag booleano "is_latest".
+      · BYTEA en pdf_content: PostgreSQL admite hasta 1 GB por campo BYTEA.
+        Los PDFs de este sistema (~150-300 KB) son órdenes de magnitud
+        inferiores a ese límite.
+      · file_size_kb INTEGER: campo desnormalizado para facilitar el monitoreo
+        del uso de almacenamiento sin necesidad de leer el BYTEA completo.
+      · FK store_id → stores_database: garantiza integridad referencial.
+        ON DELETE CASCADE: si una tienda es eliminada, sus reportes se borran
+        automáticamente sin dejar huérfanos.
+      · Índice (store_id, created_at DESC): optimiza la consulta más frecuente
+        del endpoint de la API — "dame el reporte más reciente de la tienda X".
+        La dirección DESC en el índice evita un sort explícito en el plan de
+        ejecución de PostgreSQL.
+
+    Raises:
+        sqlalchemy.exc.SQLAlchemyError: si la conexión falla o Neon devuelve
+        un error DDL inesperado. El llamador (main.py) lo captura y aborta.
+    """
+    ddl_table = text("""
+        CREATE TABLE IF NOT EXISTS reports_database (
+            report_id    BIGSERIAL    PRIMARY KEY,
+            store_id     INTEGER      NOT NULL
+                             REFERENCES stores_database(store_id)
+                             ON DELETE CASCADE,
+            created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+            period_from  DATE         NOT NULL,
+            period_to    DATE         NOT NULL,
+            pdf_content  BYTEA        NOT NULL,
+            file_size_kb INTEGER      NOT NULL
+        )
+    """)
+
+    # Índice compuesto para la consulta "último reporte por tienda".
+    # CREATE INDEX IF NOT EXISTS es idempotente desde PostgreSQL 9.5.
+    # La dirección DESC en created_at garantiza que el plan de ejecución
+    # de la query ORDER BY created_at DESC LIMIT 1 use el índice directamente
+    # sin un paso de sort adicional.
+    ddl_index = text("""
+        CREATE INDEX IF NOT EXISTS ix_reports_store_created
+            ON reports_database (store_id, created_at DESC)
+    """)
+
+    with get_session() as session:
+        session.execute(ddl_table)
+        session.execute(ddl_index)
+
+    logger.info("✅ Tabla reports_database verificada/creada en Neon.")
+
+
+def save_report(
+    store_id:    int,
+    pdf_bytes:   bytes,
+    period_from: date,
+    period_to:   date,
+) -> ReportRecord:
+    """
+    Persiste un nuevo reporte PDF en reports_database y aplica la política
+    de retención eliminando los reportes más antiguos de esa tienda.
+
+    Ambas operaciones — INSERT del nuevo reporte y DELETE de los históricos
+    fuera de la ventana de retención — se ejecutan dentro de una única
+    transacción ACID. Si cualquiera de las dos falla, el rollback automático
+    del context manager get_session() garantiza que Neon no quede en un estado
+    parcialmente modificado: o se persiste el reporte completo y se limpian
+    los antiguos, o no ocurre ningún cambio.
+
+    Política de retención (DELETE):
+      Se conservan los `_KEEP_REPORTS_PER_STORE` reportes más recientes
+      por tienda (13 = ~3 meses de generación semanal). Los reportes fuera
+      de esa ventana se eliminan usando una subconsulta que identifica los
+      report_id a borrar mediante ORDER BY + OFFSET, que es la forma más
+      segura y portable de implementar "borrar todo excepto los N más
+      recientes" en PostgreSQL sin cursores ni CTEs adicionales.
+
+    Args:
+        store_id:    Identificador de la tienda propietaria del reporte.
+        pdf_bytes:   Contenido binario del PDF generado por renderer.py.
+                     Se almacena directamente en el campo BYTEA sin
+                     transformaciones intermedias.
+        period_from: Primer día del horizonte de predicción cubierto.
+        period_to:   Último día del horizonte de predicción cubierto.
+
+    Returns:
+        ReportRecord con los metadatos del reporte recién insertado,
+        incluyendo el report_id asignado por la secuencia BIGSERIAL de Neon.
+        El campo pdf_content NO se incluye en el dataclass retornado para
+        evitar mantener el binario en memoria más allá de lo necesario.
+
+    Raises:
+        sqlalchemy.exc.SQLAlchemyError: propagado al llamador si la
+        transacción falla. main.py lo captura por tienda sin abortar el
+        pipeline completo.
+    """
+    file_size_kb = max(1, len(pdf_bytes) // 1024)
+    now_utc = datetime.now(timezone.utc)
+
+    #  INSERT: nuevo reporte 
+    # RETURNING report_id permite recuperar el ID asignado por BIGSERIAL
+    # en la misma sentencia, sin necesidad de un SELECT adicional posterior.
+    insert_query = text("""
+        INSERT INTO reports_database
+            (store_id, created_at, period_from, period_to, pdf_content, file_size_kb)
+        VALUES
+            (:store_id, :created_at, :period_from, :period_to, :pdf_content, :file_size_kb)
+        RETURNING report_id
+    """)
+
+    #  DELETE: política de retención 
+    # Subconsulta:
+    #   1. Selecciona los report_id de esta tienda, ordenados del más reciente
+    #      al más antiguo.
+    #   2. Salta los primeros _KEEP_REPORTS_PER_STORE (OFFSET), que son los
+    #      que queremos conservar.
+    #   3. Los restantes (si los hay) son candidatos a eliminación.
+    #
+    # El DELETE solo se ejecuta si existen más de _KEEP_REPORTS_PER_STORE
+    # reportes, lo que es el caso normal después de ~3 meses de operación.
+    # Las primeras 13 semanas el DELETE no elimina nada (subconsulta vacía).
+    cleanup_query = text("""
+        DELETE FROM reports_database
+        WHERE report_id IN (
+            SELECT report_id
+            FROM   reports_database
+            WHERE  store_id = :store_id
+            ORDER BY created_at DESC
+            OFFSET :keep_count
+        )
+    """)
+
+    with get_session() as session:
+        # Paso 1: INSERT
+        result = session.execute(insert_query, {
+            "store_id":    store_id,
+            "created_at":  now_utc,
+            "period_from": period_from,
+            "period_to":   period_to,
+            "pdf_content": pdf_bytes,
+            "file_size_kb": file_size_kb,
+        })
+        new_report_id: int = result.scalar_one()
+
+        # Paso 2: DELETE de históricos fuera de la ventana de retención.
+        # Se ejecuta en la misma sesión y transacción que el INSERT, garantizando
+        # que el nuevo reporte ya cuenta como parte de los _KEEP_REPORTS_PER_STORE
+        # antes de que se evalúe el OFFSET de la subconsulta de limpieza.
+        delete_result = session.execute(cleanup_query, {
+            "store_id":   store_id,
+            "keep_count": _KEEP_REPORTS_PER_STORE,
+        })
+        deleted_count: int = delete_result.rowcount
+
+    #  Log detallado 
+    period_label = (
+        f"{period_from.strftime('%d/%m/%Y')} → {period_to.strftime('%d/%m/%Y')}"
+    )
+    logger.info(
+        f"  💾 Reporte persistido en Neon — "
+        f"report_id={new_report_id} | "
+        f"tienda={store_id} | "
+        f"período={period_label} | "
+        f"tamaño={file_size_kb} KB"
+    )
+    if deleted_count > 0:
+        logger.info(
+            f"  🗑   Limpieza de retención — "
+            f"{deleted_count} reporte(s) antiguo(s) eliminado(s) "
+            f"para tienda {store_id} "
+            f"(política: conservar últimos {_KEEP_REPORTS_PER_STORE})"
+        )
+
+    return ReportRecord(
+        report_id=new_report_id,
+        store_id=store_id,
+        created_at=now_utc,
+        period_from=period_from,
+        period_to=period_to,
+        file_size_kb=file_size_kb,
+    )
