@@ -12,5 +12,6 @@ class PredictionAlert(BaseModel):
     prediction: int           
     avg_weekly_sales: float
     percentage_average_deviation: float = 0.0
+    margin_of_error: float = 0.0
     type: Literal["superavit", "deficit", "none"]
     feature: bool | None = None
