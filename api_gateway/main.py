@@ -3,7 +3,8 @@ import requests
 import math
 from datetime import datetime, date #Para generar fechas de registro
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Response
-from fastapi.security import APIKeyHeader
+from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import List
@@ -77,6 +78,28 @@ def verify_api_key(api_key: str = Depends(api_key_header)):
             detail="Acceso denegado: API Key inválida"
         )
     return api_key
+
+#----------------------------- SEGURIDAD JWT -----------------------------
+security = HTTPBearer()
+ALGORITHM = "HS256"
+
+def verify_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        token = credentials.credentials
+        # Desencriptamos el token usando nuestra misma llave maestra
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        store_id: int = payload.get("id_negocio")
+        
+        if store_id is None:
+            raise HTTPException(status_code=401, detail="Token inválido: No contiene id_negocio")
+        return store_id
+        
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Acceso denegado: Token JWT inválido o expirado"
+        )
+#-------------------------------------------------------------------------
 
 #-------------------------------------------------- FUNCIONES AUXILIARES ----------------------------------------------
 
@@ -252,6 +275,7 @@ def register_business(datos: RegistroNegocio, response: Response, db: Session = 
             return {
                 "status": "email_repeated",
                 "id_negocio": None,
+                "token": None,
                 "mensaje": "El correo ya se encuentra registrado."
             }
 
@@ -272,9 +296,14 @@ def register_business(datos: RegistroNegocio, response: Response, db: Session = 
         #Refrescamos para que PostgreSQL nos devuelva el "store_id" que generó automáticamente
         db.refresh(nueva_tienda)
 
+        # GENERAMOS EL TOKEN JWT
+        datos_token = {"id_negocio": nueva_tienda.store_id}
+        token_jwt = jwt.encode(datos_token, SECRET_KEY, algorithm=ALGORITHM)
+
         return {
             "status": "exito",
             "id_negocio": str(nueva_tienda.store_id), #Lo mandamos como texto
+            "token": token_jwt, # Le mandamos el token jwt al frontend para que lo guarde
             "mensaje": "Negocio registrado correctamente. Coordenadas ancladas para el modelo predictivo."
         }
 
@@ -285,16 +314,25 @@ def register_business(datos: RegistroNegocio, response: Response, db: Session = 
         return {
             "status": "fail",
             "id_negocio": None,
+            "token": None,
             "mensaje": f"Error de conexión con el servidor: {str(e)}"
         }
 
 #Sincronizar Ventas (Necesita autenticación con API Key)****************************************************
-@app.post("/api/v1/ventas/sync", dependencies=[Depends(verify_api_key)])
+@app.post("/api/v1/ventas/sync")
 def sync_ventas(
     datos: SincronizacionMensaje,  #Se guarda el json en la variable "datos" con el molde definido en la clase "SincronizacionMensaje"
     background_tasks: BackgroundTasks, #Inyectamos la cola de tareas en segundo plano para no hacer esperar al cliente local mientras procesamos el JSON
-    db: Session = Depends(get_db) #Conectamos la base de datos al endpoint para realizar una validación
+    db: Session = Depends(get_db), #Conectamos la base de datos al endpoint para realizar una validación
+    token_store_id: int = Depends(verify_jwt) # Inyectamos el ID del token
     ):
+
+    # Verificación JWT: Comparamos el ID de tienda que viene en el token con el ID de tienda que viene en el JSON. Si no coinciden, es un intento de fraude y rechazamos la petición.
+    if token_store_id != datos.id_store:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: El token de autenticación no coincide con la tienda solicitada."
+        )
 
     #Validación:Buscar la tienda en la base de datos
     tienda_existente = db.query(Tienda).filter(Tienda.store_id == datos.id_store).first()
@@ -324,9 +362,12 @@ def sync_ventas(
     }
 
 #Obtener Predicciones por Tienda (Necesita autenticación con API Key)***************************************
-@app.get("/api/v1/business/{store_id}/predictions", dependencies=[Depends(verify_api_key)])
-def get_predictions(store_id: int, db: Session = Depends(get_db)):
+@app.get("/api/v1/business/{store_id}/predictions")
+def get_predictions(store_id: int, db: Session = Depends(get_db), token_store_id: int = Depends(verify_jwt)):
     
+    if token_store_id != store_id:
+        raise HTTPException(status_code=403, detail="No puedes ver las predicciones de otra tienda.")
+
     # Obtenemos la fecha actual del servidor
     hoy = date.today()
 
@@ -363,9 +404,12 @@ def get_predictions(store_id: int, db: Session = Depends(get_db)):
     return {"predictions": respuesta}
 
 #Obtener Historial de Ventas de un Producto Específico (Necesita autenticación con API Key)*****************
-@app.get("/api/v1/business/{store_id}/{barcode}", dependencies=[Depends(verify_api_key)])
-def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db)):
+@app.get("/api/v1/business/{store_id}/{barcode}")
+def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db), token_store_id: int = Depends(verify_jwt)):
     
+    if token_store_id != store_id:
+        raise HTTPException(status_code=403, detail="No puedes ver el historial de otra tienda.")
+
     #Agrupamos por fecha y suma las cantidades de la base de datos, filtrando por tienda y código de barras.
     resultados = db.query(
         Venta.date.label("fecha"), 
