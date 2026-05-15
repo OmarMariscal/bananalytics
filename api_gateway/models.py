@@ -7,6 +7,7 @@ Tablas mapeadas (esquema del documento de Arquitectura):
   · sales_database      → Venta
   · prediction_database → Prediccion  (incluye store_id y percentage_average_deviation)
   · models_database     → ModeloML
+  · reports_database    → Reporte
 
 Decisiones de diseño:
   - BigInteger en sale_id y prediction.id por volumen esperado a largo plazo.
@@ -51,6 +52,7 @@ class Tienda(Base):
 
     ventas       = relationship("Venta",     back_populates="tienda",  lazy="select")
     predicciones = relationship("Prediccion", back_populates="tienda", lazy="select")
+    reportes     = relationship("Reporte", back_populates="tienda", lazy="select")
 
     def __repr__(self) -> str:
         return f"<Tienda id={self.store_id} ciudad='{self.city}'>"
@@ -153,3 +155,20 @@ class ModeloML(Base):
             f"<ModeloML barcode='{self.barcode}' "
             f"ejemplos={self.total_examples} mse={self.last_mse}>"
         )
+    
+
+class Reporte(Base):
+    __tablename__ = "reports_table"
+
+    report_id    = Column(Integer, primary_key=True, autoincrement=True)
+    store_id     = Column(Integer, ForeignKey("stores_database.store_id"), nullable=False, index=True)
+    created_at   = Column(DateTime, default=datetime.utcnow, nullable=False)
+    period_from  = Column(Date, nullable=False)
+    period_to    = Column(Date, nullable=False)
+    pdf_content  = Column(LargeBinary, nullable=False) # Aquí se guarda el binario del PDF
+    file_size_kb = Column(Integer)
+
+    tienda = relationship("Tienda", back_populates="reportes")
+
+    def __repr__(self) -> str:
+        return f"<Reporte id={self.report_id} store={self.store_id} fecha='{self.created_at}'>"

@@ -1,6 +1,7 @@
 import os
 import requests
 import math
+import base64
 from datetime import datetime, date #Para generar fechas de registro
 from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Response
 from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
@@ -12,7 +13,7 @@ from typing import List
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 #Importamos las clases de la base de datos para hacer consultas e inserciones
-from models import Tienda, Producto, Venta, Prediccion
+from models import Tienda, Producto, Venta, Prediccion, Reporte
 
 #----------------------------- MODELOS DE DATOS -----------------------------
 # Molde para los productos individuales
@@ -433,3 +434,30 @@ def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db)
         })
         
     return {"history": respuesta}
+
+#Obtener el Reporte Semanal más reciente (Necesita autenticación con JWT)***********************************
+@app.get("/api/v1/business/{store_id}/report")
+def get_latest_report(store_id: int, db: Session = Depends(get_db), token_store_id: int = Depends(verify_jwt)):
+    
+    # Regla Anti-Fraude
+    if token_store_id != store_id:
+        raise HTTPException(status_code=403, detail="No puedes descargar reportes de otra tienda.")
+
+    # Buscamos el reporte ordenando por fecha de creación descendente y tomando solo el primero (.first())
+    reporte_reciente = db.query(Reporte).filter(
+        Reporte.store_id == store_id
+    ).order_by(Reporte.created_at.desc()).first()
+
+    if not reporte_reciente:
+        raise HTTPException(status_code=404, detail="No se encontraron reportes generados para esta tienda.")
+
+    # Convertimos el archivo binario a una cadena de texto (Base64) para que pueda viajar dentro del JSON
+    pdf_base64 = base64.b64encode(reporte_reciente.pdf_content).decode('utf-8')
+
+    return {
+        "response": pdf_base64
+        #,
+        #"period_from": reporte_reciente.period_from.strftime("%Y-%m-%d"),
+        #"period_to": reporte_reciente.period_to.strftime("%Y-%m-%d"),
+        #"created_at": reporte_reciente.created_at.strftime("%Y-%m-%d %H:%M:%S")
+    }
