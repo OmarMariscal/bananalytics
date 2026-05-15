@@ -2,7 +2,7 @@ import os
 import requests
 import math
 from datetime import datetime, date #Para generar fechas de registro
-from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Response
 from fastapi.security import APIKeyHeader
 from dotenv import load_dotenv
 from pydantic import BaseModel
@@ -240,13 +240,15 @@ def health_check():
     }
 
 #Registrar un nuevo negocio (Necesita autenticación con API Key)********************************************
-@app.post("/api/v1/business/register", dependencies=[Depends(verify_api_key)])
-def register_business(datos: RegistroNegocio, db: Session = Depends(get_db)): #Se guarda el json en la variable "datos" con el molde definido en la clase "RegistroNegocio". Además, se inyecta la sesión de la base de datos con "db" para usarla dentro de la función
+@app.post("/api/v1/business/register", dependencies=[Depends(verify_api_key)], status_code=status.HTTP_201_CREATED) # si todo sale bien, devuelve un 201 por defecto.
+def register_business(datos: RegistroNegocio, response: Response, db: Session = Depends(get_db)): #Se guarda el json en la variable "datos" con el molde definido en la clase "RegistroNegocio". Además, se inyecta la sesión de la base de datos con "db" para usarla dentro de la función y la variable response para modificar el código de estado si es necesario.
     try:
         #Verificar si el correo ya existe haciendo una consulta a la tabla Tienda buscando el email
         tienda_existente = db.query(Tienda).filter(Tienda.email == datos.email).first()
         
         if tienda_existente:
+            # Si hay error, cambiamos el código HTTP a 409 (Conflicto) y mandamos un mensaje de error
+            response.status_code = status.HTTP_409_CONFLICT
             return {
                 "status": "email_repeated",
                 "id_negocio": None,
@@ -277,8 +279,9 @@ def register_business(datos: RegistroNegocio, db: Session = Depends(get_db)): #S
         }
 
     except Exception as e:
-        #Si algo falla, deshacemos los cambios y enviamos error
+        #Si algo falla, deshacemos los cambios y enviamos un Error 500 Interno
         db.rollback()
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return {
             "status": "fail",
             "id_negocio": None,
