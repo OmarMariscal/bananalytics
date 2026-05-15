@@ -114,7 +114,6 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
         datos_clima = respuesta.json()
 
         #Extraemos las listas de datos (cada lista tiene 24 elementos, uno por hora del día)
-        horas_clima = datos_clima["hourly"]["time"]
         temperaturas = datos_clima["hourly"]["temperature_2m"]
         codigos_clima = datos_clima["hourly"]["weather_code"]
         
@@ -137,6 +136,12 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
 
                 #Llamamos a nuestra función ayudante y le pasamos el código y nuestra sesión "db"
                 producto_info = obtener_o_crear_producto(codigo, db)
+
+                if producto_info is None:
+                    # Si GO UPC falló y el producto no se pudo registrar en la base de datos central, ABORTAMOS la inserción de esta venta en particular
+                    # para evitar el error 'ForeignKeyViolation' que crashearía todo el bloque.
+                    print(f"⚠️ Venta omitida: El código {codigo} no existe en catálogo y GO UPC falló.")
+                    continue  # Salta a la siguiente iteración del for (al siguiente producto)
 
                 #Preparamos el registo para la tabla sales_database
                 nueva_venta = Venta(
@@ -164,6 +169,11 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
 
 #Función para buscar el producto en Neon, o lo descarga de Go UPC******************************************************
 def obtener_o_crear_producto(barcode: str, db: Session):
+    # Verificamos que contenga exclusivamente números y tenga una longitud comercial estándar (8 a 14 dígitos)
+    if not barcode.isdigit() or not (8 <= len(barcode) <= 14):
+        print(f"xX Código ignorado: '{barcode}' no tiene un formato comercial válido (EAN/UPC) Xx")
+        return None
+    
     #Buscamos en nuestra base de datos central primero
     producto_existente = db.query(Producto).filter(Producto.barcode == barcode).first()
     
@@ -184,7 +194,7 @@ def obtener_o_crear_producto(barcode: str, db: Session):
         
         #Si el producto no está registrado, Go UPC devuelve 404
         if respuesta.status_code == 404:
-            print(f"Advertencia: Producto {barcode} no encontrado.")
+            print(f"Advertencia: Producto {barcode} no encontrado en GO UPC.")
             nuevo_producto = Producto(
                 barcode=barcode,
                 product_name="Producto Desconocido",
@@ -320,7 +330,7 @@ def get_predictions(store_id: int, db: Session = Depends(get_db)):
     #Hacemos una consulta a la tabla "prediction_database", gracias a desnormalización realizada en models.py nos evitamos hacer un join
     resultados = db.query(Prediccion).filter(
         Prediccion.store_id == store_id,
-        Prediccion.objetive_date > hoy #que la fecha de objetivo sea mayor a la de hoy
+        Prediccion.objective_date > hoy #que la fecha de objetivo sea mayor a la de hoy
     ).all()
 
     respuesta = []
@@ -334,17 +344,20 @@ def get_predictions(store_id: int, db: Session = Depends(get_db)):
             desviacion = 0.0
         
         respuesta.append({
+            "barcode": pred.barcode,
             "product_name": pred.product_name,
             "Category": pred.category,
             "image_url": pred.image_url,
-            "objetive_date": pred.objetive_date.strftime("%Y-%m-%d"), #Convertimos la fecha a texto
+            "objective_date": pred.objective_date.strftime("%Y-%m-%d"), #Convertimos la fecha a texto
             "prediction": pred.prediction,
-            "percentage_average_deviation": pred.percentage_average_deviation,
             "feature": pred.feature,
-            "type": pred.type
+            "type": pred.type,
+            "percentage_average_deviation": desviacion,
+            "avg_weekly_sales": pred.avg_weekly_sales,
+            "margin_of_error": pred.margin_of_error
         })
         
-    return respuesta
+    return {"predictions": respuesta}
 
 #Obtener Historial de Ventas de un Producto Específico (Necesita autenticación con API Key)*****************
 @app.get("/api/v1/business/{store_id}/{barcode}", dependencies=[Depends(verify_api_key)])
@@ -368,8 +381,8 @@ def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db)
     
     for fila in resultados:
         respuesta.append({
-            "fecha": fila.fecha.strftime("%Y-%m-%d"),
-            "total_vendido": fila.total_vendido
+            "date": fila.fecha.strftime("%Y-%m-%d"),
+            "volume": fila.total_vendido
         })
         
-    return respuesta
+    return {"history": respuesta}
