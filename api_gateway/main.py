@@ -391,7 +391,7 @@ def get_predictions(store_id: int, db: Session = Depends(get_db), token_store_id
         respuesta.append({
             "barcode": pred.barcode,
             "product_name": pred.product_name,
-            "Category": pred.category,
+            "category": pred.category,
             "image_url": pred.image_url,
             "objective_date": pred.objective_date.strftime("%Y-%m-%d"), #Convertimos la fecha a texto
             "prediction": pred.prediction,
