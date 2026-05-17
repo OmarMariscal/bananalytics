@@ -24,7 +24,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger, Boolean, Column, Date, DateTime, Enum,
     Float, ForeignKey, Index, Integer, LargeBinary,
-    String, Time, UniqueConstraint,
+    String, Time, UniqueConstraint, func
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -106,8 +106,7 @@ class Prediccion(Base):
         ),
     )
 
-    # Renombramos 'id' a 'id_prediction' para evitar confusión con otros id's
-    id_prediction = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     store_id = Column(Integer, ForeignKey("stores_database.store_id"), nullable=False, index=True)
     barcode  = Column(String(50), ForeignKey("product_database.barcode"), nullable=False, index=True)
 
@@ -158,15 +157,15 @@ class ModeloML(Base):
     
 
 class Reporte(Base):
-    __tablename__ = "reports_table"
+    __tablename__ = "reports_database"
 
-    report_id    = Column(Integer, primary_key=True, autoincrement=True)
-    store_id     = Column(Integer, ForeignKey("stores_database.store_id"), nullable=False, index=True)
-    created_at   = Column(DateTime, default=datetime.utcnow, nullable=False)
+    report_id    = Column(BigInteger, primary_key=True, autoincrement=True)
+    store_id     = Column(Integer, ForeignKey("stores_database.store_id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at   = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     period_from  = Column(Date, nullable=False)
     period_to    = Column(Date, nullable=False)
-    pdf_content  = Column(LargeBinary, nullable=False) # Aquí se guarda el binario del PDF
-    file_size_kb = Column(Integer)
+    pdf_content  = Column(LargeBinary, nullable=False)
+    file_size_kb = Column(Integer, nullable=False)
 
     tienda = relationship("Tienda", back_populates="reportes")
 
