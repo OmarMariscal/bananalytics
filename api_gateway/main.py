@@ -233,9 +233,9 @@ def obtener_o_crear_producto(barcode: str, db: Session):
             
             nuevo_producto = Producto(
                 barcode=barcode,
-                product_name=info_producto.get("name", "Nombre no disponible"),
-                category=info_producto.get("category", "Sin Categoría"),
-                image_url=info_producto.get("imageUrl", "Sin Imagen")
+                product_name=info_producto.get("name") or "Nombre no disponible",
+                category=info_producto.get("category") or "Sin Categoría",
+                image_url=info_producto.get("imageUrl") or "Sin Imagen"
             )
             print(f"¡Producto {nuevo_producto.product_name} descargado de GO UPC!")
 
