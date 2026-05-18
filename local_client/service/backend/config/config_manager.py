@@ -1,96 +1,191 @@
-#LEER Y ESCRIBIR EL ARCHIVO SETTINGS.JSON
+"""
+Administrador de Configuraciones Locales.
+Maneja el estado persistente de la aplicación en el disco duro (settings.json).
+Decide si la aplicación debe comportarse como nueva o si ya tiene
+una identidad confirmada por la nube.
+"""
 
 import os
 import json
-from datetime import date
-from shared.models.user import User
-from shared.models.info_config import ConfigStats
+import requests
+from requests.exceptions import RequestException
+from datetime import date, datetime, timedelta
+
+from local_client.shared.models.user import User
+from local_client.shared.models.info_config import ConfigStats
 
 
 class ConfigManager:
-    """
-    Administrador de Configuraciones Locales.
-    Maneja el estado persistente de la aplicacion en el disco duro.
-    Decide si la aplicacion debe comportarse como nueva o si ya tiene
-    una identidad confirmada por la nube.
-    """
-    #Definir el nombre del archivo
     def __init__(self):
-        """
-        Constructor.
-        Establece y asegura la existencia de la carpeta 'Conf' y el archivo 'settings.json'.
-        """
-        self.carpeta_conf = "Conf"
-        #exist_ok=True previene que el programa falle si la carpeta ya fue creada
+        # Define la estructura de carpetas locales donde se guardarán los datos
+        self.carpeta_data = "data"
+        self.carpeta_conf = os.path.join(self.carpeta_data, "Conf")
         os.makedirs(self.carpeta_conf, exist_ok=True)
-        self.archivo_config = os.path.join(self.carpeta_conf, "settings.json")
 
-    #Validar si es el primer inicio al buscar el ARCHIVO_CONFIG
+        self.archivo_config = os.path.join(self.carpeta_conf, "settings.json")
+        self.archivo_cache_dashboard = os.path.join(self.carpeta_conf, "last_dashboard.json")
+
     def is_first_start(self) -> bool:
         """
         El Gatekeeper de la Interfaz.
-        Flet llama a este metodo para decidir si muestra la pantalla de Registro o el Dashboard.
-
-        Returns:
-            bool: True si es una instalacion virgen o si los datos se corrompieron.
-                    False si la tienda ya esta registrada y configurada.
+        El frontend (Flet) llama a este método para decidir si muestra la pantalla de
+        Registro Inicial o si pasa directamente al Dashboard.
         """
         if not os.path.exists(self.archivo_config):
-            return True #Si no existe,el usuario nunca se ha registrado, por lo tanto devuelve True
+            return True
         try:
             with open(self.archivo_config, "r") as f:
                 config = json.load(f)
-                return not config.get("system", {}).get("first_launch_completed", False) #Si existe el archivo creado, pero el valor es False, es primer inicio
+                return not config.get("system", {}).get("first_launch_completed", False)
         except (json.JSONDecodeError, KeyError):
             return True
 
-    def create_configurations(self, user: User, id_store: str) -> bool:
+    def _obtener_ubicacion_por_ip(self) -> dict:
         """
-        Genera la "Cedula de Identidad" de la tienda.
-        Se ejecuta UNICAMENTE despues de que la API aprueba el registro
-        y nos devuelve un ID de tienda valido.
+        Detecta la ubicación aproximada de la tienda usando su IP pública.
+        Se usa durante el registro para enviarle esta data a la API.
         """
-        #Organiza los datos como los tenemos definidos
+        url = "http://ip-api.com/json/"
+        try:
+            respuesta = requests.get(url, timeout=5)
+            respuesta.raise_for_status()
+            datos = respuesta.json()
+
+            if datos.get("status") == "success":
+                return {
+                    "ip": datos.get("query"),
+                    "pais": datos.get("country"),
+                    "ciudad": f"{datos.get('city')}, {datos.get('regionName')}",
+                    "latitud": datos.get("lat"),
+                    "longitud": datos.get("lon"),
+                    "isp": datos.get("isp")
+                }
+            return {}
+        except RequestException as e:
+            print(f"[ConfigManager] Error de red al detectar ubicacion: {e}")
+            return {}
+
+    def create_configurations(self, user: User, id_store: str, token: str) -> bool:
+        """
+        Genera la "Cédula de Identidad" de la tienda (settings.json).
+        Solo se ejecuta después de que la API aprueba el registro inicial.
+        Guarda el JWT, el ID de tienda y la ubicación.
+        """
+        print("[ConfigManager] Detectando ubicación geográfica...")
+        ubicacion_detectada = self._obtener_ubicacion_por_ip()
+
+        hoy = date.today()
+        # Establecemos el control de reportes al lunes de esta semana
+        lunes_inicial = hoy - timedelta(days=hoy.weekday())
+
         config_data = {
-            #Rutas tecnicas
             "system": {
                 "first_launch_completed": True,
-                "local_db_path": "./tienda.db"
+                "local_db_path": "./tienda.db",
+                "last_report_date": lunes_inicial.strftime("%Y-%m-%d"),
+                "jwt_token": str(token)
             },
-            #Datos del dueno
             "store_profile": {
                 "id_store": str(id_store),
                 "owner_name": user.name,
                 "email": user.email,
                 "location": {
-                    "city": "Guadalajara, Jalisco",
-                    "lat": 20.6596,
-                    "lng": -103.3496
+                    "city": ubicacion_detectada.get("ciudad", "Guadalajara, Jalisco"),
+                    "lat": ubicacion_detectada.get("latitud", 20.6596),
+                    "lng": ubicacion_detectada.get("longitud", -103.3496)
                 }
             }
         }
-        with open(self.archivo_config, "w") as f:
-            json.dump(config_data, f, indent=4)
-        return True
 
-    #Datos para que el Rogi los muestre en el perfil del usuario
-    #Transforma los datos crudos del JSON en un objeto tipo ConfigStats
+        try:
+            with open(self.archivo_config, "w") as f:
+                json.dump(config_data, f, indent=4)
+            return True
+        except Exception as e:
+            print(f"[ConfigManager] Error al escribir configuraciones: {e}")
+            return False
+
+    def get_jwt_token(self) -> str:
+        """Punto único de acceso al Token JWT para firmar las peticiones HTTP."""
+        if not os.path.exists(self.archivo_config):
+            return ""
+        try:
+            with open(self.archivo_config, "r") as f:
+                return json.load(f).get("system", {}).get("jwt_token", "")
+        except (json.JSONDecodeError, KeyError):
+            return ""
+
+    def get_store_id(self) -> str:
+        """Recupera el identificador único de la tienda asignado por la nube."""
+        if not os.path.exists(self.archivo_config):
+            return "1"
+        try:
+            with open(self.archivo_config, "r") as f:
+                return str(json.load(f).get("store_profile", {}).get("id_store", "1"))
+        except (json.JSONDecodeError, KeyError):
+            return "1"
+
     def get_app_stats(self) -> ConfigStats:
-        """
-        Transforma los datos crudos del disco duro en un Objeto Python.
-        Rogi usa esto para rellenar los datos del usuario en la barra lateral o perfil.
-        """
-        #Si no hay registro, no hay perfil que mostrar
+        """Provee los datos básicos del usuario para pintar la barra lateral de la UI."""
         if self.is_first_start():
             return None
-        with open(self.archivo_config, "r") as f:
-            config = json.load(f)
-            perfil = config.get("store_profile", {})
+        try:
+            with open(self.archivo_config, "r") as f:
+                perfil = json.load(f).get("store_profile", {})
+                return ConfigStats(
+                    user_name=perfil.get("owner_name", "Usuario"),
+                    email=perfil.get("email", ""),
+                    theme_mode=True,
+                    current_date=date.today()
+                )
+        except Exception as e:
+            print(f"[ConfigManager] Error al leer perfil de usuario: {e}")
+            return None
 
-            #Mapeamos el Diccionario a nuestro Modelo de Datos
-            return ConfigStats(
-                user_name=perfil.get("owner_name"),
-                email=perfil.get("email"),
-                theme_mode=True,
-                current_date=date.today()
-            )
+    def get_last_report_date(self) -> date:
+        """Controla cuándo fue la última vez que se generó un reporte semanal PDF."""
+        try:
+            with open(self.archivo_config, "r") as f:
+                fecha_str = json.load(f).get("system", {}).get("last_report_date")
+                if fecha_str:
+                    return datetime.strptime(fecha_str, "%Y-%m-%d").date()
+        except (json.JSONDecodeError, KeyError, FileNotFoundError, ValueError):
+            pass
+
+        # Si falla o no existe, reiniciamos el contador al último lunes
+        hoy = date.today()
+        ultimo_lunes = hoy - timedelta(days=hoy.weekday())
+        self.update_last_report_date(ultimo_lunes)
+        return ultimo_lunes
+
+    def update_last_report_date(self, nueva_fecha: date):
+        """Actualiza el marcador de tiempo tras descargar un reporte exitosamente."""
+        if not os.path.exists(self.archivo_config):
+            return
+        try:
+            with open(self.archivo_config, "r") as f:
+                config = json.load(f)
+            config.setdefault("system", {})["last_report_date"] = nueva_fecha.strftime("%Y-%m-%d")
+            with open(self.archivo_config, "w") as f:
+                json.dump(config, f, indent=4)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"[ConfigManager] Error al actualizar fecha de reporte: {e}")
+
+    def save_last_dashboard(self, data: dict):
+        """Guarda una caché local de las predicciones en caso de que se caiga el internet."""
+        if not data: return
+        try:
+            with open(self.archivo_cache_dashboard, "w") as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"[ConfigManager] No se pudo guardar la cache: {e}")
+
+    def get_last_dashboard(self) -> dict:
+        """Rescata las predicciones de la caché local para que la UI no se rompa sin red."""
+        if not os.path.exists(self.archivo_cache_dashboard):
+            return {}
+        try:
+            with open(self.archivo_cache_dashboard, "r") as f:
+                return json.load(f)
+        except:
+            return {}

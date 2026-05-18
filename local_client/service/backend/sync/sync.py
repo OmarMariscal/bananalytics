@@ -1,331 +1,248 @@
+"""
+Demonio de Sincronización en Segundo Plano.
+Se ejecuta de forma invisible para agrupar ventas locales y enviarlas a la nube.
+Diseñado para ser resiliente: si no hay red, guarda los paquetes y reintenta después.
+"""
+
 import glob
 import json
 import os
 import time
 import threading
-import requests
 from datetime import datetime
-from service.backend.db.sqlite_manager import SQLiteManager
+
 
 class SyncDaemon:
-    """
-    Demonio de Sincronizacion en Segundo Plano.
-    Garantiza que ninguna venta se pierda si hay caidas de red, gestionando
-    empaquetados, reintentos y limpieza de memoria cache temporal.
-    """
     def __init__(self, db_manager, api_service, config_manager):
-        """
-        Constructor del Daemon.
-        Prepara las rutas del sistema de archivos y asegura la existencia
-        de las carpetas de configuracion y respaldo antes de arrancar.
-        """
         self.db = db_manager
         self.api = api_service
         self.config = config_manager
 
-        self.archivo_cola = "missing-items.txt"
-        self.archivo_config = "settings.json"
-
-        #Credenciales de la Nube
-        self.api_url = "https://bananalytics.onrender.com/api/v1/ventas/sync"
-        self.api_key = "Bananalytics-Super-Secret-Key-2026"
-
-        #Mapa del Sistema de Archivos
-        self.carpeta_conf = "Conf"
+        # Carpetas para manejar la cola de envíos y respaldos de seguridad
         self.carpeta_data = "data"
+        self.carpeta_conf = os.path.join(self.carpeta_data, "Conf")
         self.carpeta_backup = os.path.join(self.carpeta_data, "Backup")
 
         self.archivo_config = os.path.join(self.carpeta_conf, "settings.json")
         self.archivo_cola = os.path.join(self.carpeta_data, "missing-items.txt")
 
-        #Autocreacion de estructura de directorios
+        # Bandera en memoria para evitar doble sincronización en un mismo día
+        self._fecha_ultima_sync = None
+
         os.makedirs(self.carpeta_conf, exist_ok=True)
         os.makedirs(self.carpeta_backup, exist_ok=True)
 
     def start(self):
-        """
-        Punto de ignicion.
-        Lanza el ciclo de vida del Daemon en un hilo independiente (Thread)
-        para mantener la interfaz de usuario completamente fluida.
-        """
+        """Inicia el demonio en un hilo separado para no bloquear la Interfaz de Usuario."""
         hilo = threading.Thread(target=self._ciclo_infinito, daemon=True)
         hilo.start()
-        print("Daemon de sincronizacion iniciado en segundo plano")
+        print("[SyncDaemon] Daemon de sincronizacion iniciado en segundo plano.")
 
-    #Intenta mandar los archivos atrasados en cola pendientes. Una vez sean las 12, intenta mandar las ventas empaquetadas del dia
     def _ciclo_infinito(self):
         """
-        El latido del corazon del sistema.
-        Se ejecuta cada 5 segundos evaluando si hay trabajo pendiente
-        o si ha llegado la hora estipulada para el cierre de caja.
+        Latido principal del daemon. Se ejecuta cada 60 segundos buscando sus ventanas horarias.
+        Al arrancar, intenta limpiar la cola de pendientes por si la app estuvo apagada.
         """
-        time.sleep(5)
-        while True:
+        print("[SyncDaemon] Verificando cola de pendientes al arrancar...")
+        try:
             self.procesar_cola_pendientes()
-            hora_actual = datetime.now().hour
-            if True:
-                print("Iniciando cierre de caja automatico...")
-                self.sincronizacion_nocturna()
-                time.sleep(60)
+        except Exception as e:
+            print(f"[SyncDaemon] Error en recuperación al arranque: {e}")
 
-            time.sleep(5)
+        while True:
+            try:
+                ahora = datetime.now()
+                hoy = ahora.date()
+                ya_sincronize_hoy = (self._fecha_ultima_sync == hoy)
 
-    #Busca el archivo settings.json para averiguar el ID de la tienda
-    def leer_config(self) -> dict:
-        """
-        Recupera la 'Cedula de Identidad' de la tienda.
-        Si por algun motivo critico el archivo se corrompio, genera un default
-        para evitar que el sistema colapse.
-        """
-        if not os.path.exists(self.archivo_config): #Si el archivo no existe, se crea uno de emergencia
-            config_default = {
-                "system": {"first_launch_completed": False},
-                "store_profile": {"id_store": 1}
-            }
-            with open(self.archivo_config, "w") as archivo:
-                json.dump(config_default, archivo, indent=4)
-            print("Config creado con valores default")
+                # Ventana principal: Medianoche (00:00 a 00:09)
+                en_ventana_principal = (ahora.hour == 0 and ahora.minute < 10)
 
-        with open(self.archivo_config, "r") as archivo:
-            return json.load(archivo)
+                if en_ventana_principal and not ya_sincronize_hoy:
+                    self.sincronizacion_nocturna()
+                    self._fecha_ultima_sync = hoy
+                    print(f"[SyncDaemon] Cierre de caja completado para {hoy}.")
 
-    #Saca todo lo del SQLite y lo convierte en el JSON esperado por Angel
+                # Ventana de respaldo (01:00 a 01:29) por si la PC estaba apagada a medianoche
+                en_ventana_barrido = (ahora.hour == 1 and ahora.minute < 30)
+
+                if en_ventana_barrido and not ya_sincronize_hoy:
+                    self.sincronizacion_nocturna()
+                    self._fecha_ultima_sync = hoy
+                    print(f"[SyncDaemon] Cierre de respaldo completado para {hoy}.")
+
+            except Exception as e:
+                print(f"[SyncDaemon] Error en ciclo principal, continuando: {e}")
+
+            time.sleep(60)
+
     def empaquetar_ventas(self) -> dict:
-        """
-        Extrae datos crudos de SQLite y los comprime en bloques de 30 minutos.
-        Consolida productos repetidos sumando sus cantidades.
-        """
-        config = self.leer_config()
-        id_store = config.get("store_profile", {}).get("id_store", 1)
+        """Agrupa las ventas crudas de SQLite en bloques de 30 minutos."""
+        id_store = int(self.config.get_store_id())
 
-        hoy = datetime.now()
-        date_str = hoy.strftime("%d-%m-%Y")
-        day = hoy.weekday() + 1 #1 = Lunes, 7 = Domingo
-
-        #Extraccion de crudos
         conexion = self.db.obtener_conexion()
         cursor = conexion.cursor()
-        cursor.execute("SELECT barcode, time, amount FROM sales_now")
+        cursor.execute("SELECT time FROM sales_now ORDER BY time ASC LIMIT 1")
+        primer_registro = cursor.fetchone()
+
+        if not primer_registro:
+            conexion.close()
+            return None
+
+        tiempo_completo = primer_registro[0]
+        fecha_filtro = tiempo_completo.split(" ")[0] if " " in tiempo_completo else datetime.now().strftime("%Y-%m-%d")
+
+        cursor.execute(
+            "SELECT barcode, time, amount FROM sales_now WHERE time LIKE ?",
+            (f"{fecha_filtro}%",)
+        )
         filas = cursor.fetchall()
         conexion.close()
 
-        if not filas:
-            print("No hay ventas locales para empaquetar en SQLite")
-            return None #Si no se vendio nada hoy, se aborta
+        # Determinar día y fecha para el payload
+        try:
+            fecha_obj = datetime.strptime(fecha_filtro, "%Y-%m-%d")
+            date_str = fecha_obj.strftime("%d-%m-%Y")
+            day = fecha_obj.weekday() + 1
+        except ValueError:
+            fecha_obj = datetime.now()
+            date_str = fecha_obj.strftime("%d-%m-%Y")
+            day = fecha_obj.weekday() + 1
 
         transacciones = {}
         for fila in filas:
             barcode, hora_venta_completa, amount = fila[0], fila[1], fila[2]
 
-            #Sacamos la hora limpia
-            if " " in hora_venta_completa:
-                solo_hora = hora_venta_completa.split(" ")[1]
-            else:
-                solo_hora = hora_venta_completa
-
-
-            # Separamos "12:45:15" en ["12", "45", "15"]
+            solo_hora = hora_venta_completa.split(" ")[1] if " " in hora_venta_completa else hora_venta_completa
             partes_tiempo = solo_hora.split(":")
             hora_str = partes_tiempo[0]
             minutos = int(partes_tiempo[1])
 
-            # Redondeamos los minutos hacia abajo
-            if minutos < 30:
-                bloque_minutos = "00"
-            else:
-                bloque_minutos = "30"
-
-            # Consolidacion
+            # Lógica de agrupamiento en bloques de media hora
+            bloque_minutos = "00" if minutos < 30 else "30"
             llave_bloque = f"{hora_str}:{bloque_minutos}:00"
 
-            # Creamos la cubeta si no existe
             if llave_bloque not in transacciones:
-                transacciones[llave_bloque] = {
-                    "time": llave_bloque,
-                    "products": []
-                }
+                transacciones[llave_bloque] = {"time": llave_bloque, "products": []}
 
-            # Buscamos si ese producto ya está en la cubeta de esta media hora
             lista_productos = transacciones[llave_bloque]["products"]
+            producto_encontrado = next((p for p in lista_productos if p["barcode"] == barcode), None)
 
-            # Truco de Python para buscar rápido en una lista de diccionarios
-            producto_encontrado = None
-            for p in lista_productos:
-                if p["barcode"] == barcode:
-                    producto_encontrado = p
-                    break
-
-            # Si ya existe, le sumamos la cantidad. Si no, lo agregamos nuevo.
             if producto_encontrado:
                 producto_encontrado["amount"] += amount
             else:
-                lista_productos.append({
-                    "barcode": barcode,
-                    "amount": amount
-                })
+                lista_productos.append({"barcode": barcode, "amount": amount})
 
-        #Estructuracion final para la API
         paquete = {
             "id_store": id_store,
             "date": date_str,
             "day": day,
-            "sales": list(transacciones.values())
+            "sales": list(transacciones.values()),
+            "_fecha_db": fecha_filtro  # Bandera interna para saber qué borrar después
         }
         return paquete
 
-    #Intenta mandar la caja a la nube
     def enviar_paquete(self, paquete: dict) -> bool:
-        """
-        Intenta cruzar el puente de red hacia el servidor en la nube.
-        Captura excepciones de red sin crashear el sistema.
-        """
-        headers = {"X-API-Key": self.api_key, "Content-Type": "application/json"}
+        """Delega el envío al ApiClient usando el JWT almacenado."""
+        token = self.config.get_jwt_token()
+        return self.api.sync_sales(paquete, token)
 
-        try:
-            respuesta = requests.post(self.api_url, json=paquete, headers=headers)
-            if respuesta.status_code == 200:
-                print(f"Envio exitoso a la nube: {respuesta.json()}")
-                return True
-            else:
-                print(f"Error del servidor nube: {respuesta.status_code}")
-                return False
-        #Si no hay internet, imprime el aviso y devuelve False
-        except(requests.exceptions.ConnectionError, requests.exceptions.Timeout):
-            print("Sin conexion a la API de la nube, guardando en cola offline")
-            return False
-
-    #Si el paquete llego bien a la nube, borra la tabla sales_now, para no mandar duplicados
-    def vaciar_sqlite(self):
-        """Purga la base de datos local una vez que los datos estan seguros en Backup o en la Nube"""
+    def vaciar_sqlite(self, fecha_procesada: str = None):
+        """Purga la base local de aquellas ventas que ya se mandaron a la nube."""
         conexion = self.db.obtener_conexion()
         cursor = conexion.cursor()
-        cursor.execute("DELETE FROM sales_now")
+        if fecha_procesada:
+            cursor.execute("DELETE FROM sales_now WHERE time LIKE ?", (f"{fecha_procesada}%",))
+        else:
+            cursor.execute("DELETE FROM sales_now")
         conexion.commit()
         conexion.close()
-        print("SQLite limpiado tras sincronizacion exitosa")
-
-    #Si no hay internet, convierte el paquete JSON a una linea de texto simple
-    def guardar_en_cola(self, paquete):
-        linea = json.dumps(paquete)
-        with open(self.archivo_cola, "a") as archivo:
-            archivo.write(linea + "\n") #La a es de adjuntar al archivo missing-items.txt
-        print(f"JSON guardado en cola: {self.archivo_cola}")
 
     def sincronizacion_nocturna(self):
-        """
-        Flujo maestro de orquestacion de datos.
-        Ejecuta el ciclo: Limpiar Cache -> Empaquetar -> Respaldar Fisico -> Enviar API -> Limpiar SQLite
-        """
-        print("Iniciando cierre de caja automatico...")
-
-        # 1. Hacemos la limpieza de hace 30 días antes de empezar
+        """Flujo de orquestación de fin de día."""
+        print("[SyncDaemon] Iniciando cierre de caja automatico...")
         self.limpiar_cache_antiguo()
 
-        # 2. Empaquetamos
         paquete = self.empaquetar_ventas()
         if paquete is None:
             return
 
-        # 3. Extraemos datos para el nombre del archivo
         id_store = paquete.get("id_store", "1")
         date_str = paquete.get("date", datetime.now().strftime("%d-%m-%Y"))
 
-        # 4. SIEMPRE creamos la memoria caché física en /Backup
-        nombre_archivo = self.guardar_backup_local(paquete, id_store, date_str)
+        # Extraemos la bandera interna antes de guardar el JSON o enviarlo
+        fecha_db_exacta = paquete.pop("_fecha_db", None)
 
-        # 5. Intentamos enviarlo a la nube
+        nombre_archivo = self.guardar_backup_local(paquete, id_store, date_str)
         envio_exitoso = self.enviar_paquete(paquete)
 
-        # 6. Tomamos decisiones
         if envio_exitoso:
-            print("Caja en la nube. Todo al corriente.")
+            print(f"[SyncDaemon] Caja del día {date_str} asegurada en la nube.")
         else:
-            # Si no hay internet, solo guardamos el NOMBRE en missing-items.txt
+            # Si no hay internet, anotamos el archivo en la cola para reintentar mañana
             with open(self.archivo_cola, "a") as cola:
                 cola.write(nombre_archivo + "\n")
-            print(f"📝 Anotado en missing-items.txt para reenvío: {nombre_archivo}")
+            print(f"[SyncDaemon] Anotado en missing-items.txt para reenvío: {nombre_archivo}")
 
-        # 7. Vaciar SQLite es seguro SIEMPRE, porque el JSON ya está en Backup
-        self.vaciar_sqlite()
+        self.vaciar_sqlite(fecha_procesada=fecha_db_exacta)
 
     def procesar_cola_pendientes(self):
-        """
-        Lee los nombres de archivos pendientes, los busca en la carpeta de Backup
-        y trata de reenviarlos. Actualiza la lista si algunos vuelven a fallar.
-        """
-        #Verificamos si existe el archivo o si el archivo esta vacio
+        """Lee el archivo de cola e intenta mandar a la API todo lo rezagado."""
         if not os.path.isfile(self.archivo_cola) or os.stat(self.archivo_cola).st_size == 0:
             return
 
-        #Leemos las lineas
         with open(self.archivo_cola, "r") as archivo:
             lineas = archivo.readlines()
 
-        lineas_pendientes = [] #Creamos esta lista vacia para mandar aqui las lineas que vuelvan a fallar
+        lineas_pendientes = []
         conexion_activa = True
+        token = self.config.get_jwt_token()
 
-        print(f"Intentando reenviar {len(lineas)} paquetes atrasados de la cola...")
-
-        #Procesamos paquete por paquete
         for linea in lineas:
             nombre_archivo = linea.strip()
-            if not nombre_archivo: #Se ignoran saltos de lineas vacios
-                continue
+            if not nombre_archivo: continue
 
+            # Si la red falló en este ciclo, paramos y guardamos el resto
             if not conexion_activa:
                 lineas_pendientes.append(nombre_archivo + "\n")
                 continue
 
             ruta_archivo = os.path.join(self.carpeta_backup, nombre_archivo)
-
             if not os.path.exists(ruta_archivo):
-                print(f"Archivo: {nombre_archivo} no existe en Backup.")
+                continue
 
             try:
-                # Extraemos el paquete del archivo guardado
                 with open(ruta_archivo, "r") as f:
                     paquete = json.load(f)
 
-                headers = {"X-API-Key": self.api_key, "Content-Type": "application/json"}
-                respuesta = requests.post(self.api_url, json=paquete, headers=headers)
-
-                if respuesta.status_code == 200:
-                    print(f"✅ Paquete atrasado enviado: {nombre_archivo}")
-                    # Como se envió, ya no lo agregamos a lineas_pendientes
+                if self.api.sync_sales(paquete, token):
+                    print(f"[SyncDaemon] ✅ Paquete atrasado enviado: {nombre_archivo}")
                 else:
                     lineas_pendientes.append(nombre_archivo + "\n")
 
-            except requests.exceptions.RequestException:
-                print("La red sigue caída. Pausando el reenvío de la cola.")
+            except json.JSONDecodeError:
+                print(f"[SyncDaemon] Archivo corrupto, descartando: {nombre_archivo}")
+                continue
+            except Exception as e:
+                print(f"[SyncDaemon] Error de red, pausando reenvíos. Motivo: {e}")
                 conexion_activa = False
                 lineas_pendientes.append(nombre_archivo + "\n")
 
-        # Reescribimos el TXT solo con los nombres que volvieron a fallar
         with open(self.archivo_cola, "w") as archivo:
             for linea in lineas_pendientes:
                 archivo.write(linea)
 
-    def guardar_backup_local(self, paquete, id_store, date_str):
-        """
-        Crea el archivo fisico final en formato JSON para trazabilidad.
-        """
+    def guardar_backup_local(self, paquete: dict, id_store: str, date_str: str) -> str:
+        """Crea un respaldo de las transacciones diarias en formato JSON."""
         hora_exacta = datetime.now().strftime("%H-%M-%S")
-
         nombre_archivo = f"{id_store}_{date_str}_{hora_exacta}.json"
-
         ruta_completa = os.path.join(self.carpeta_backup, nombre_archivo)
-
         with open(ruta_completa, "w") as archivo:
             json.dump(paquete, archivo, indent=4)
-
         return nombre_archivo
 
     def limpiar_cache_antiguo(self):
-        """
-        Borra cualquier backup que tenga mas de 30 dias de antiguedad
-        para evitar llenar el almacenamiento de la computadora local.
-        :return:
-        """
+        """Política de retención: borra respaldos de más de 30 días para ahorrar espacio."""
         dias_limite = 30
         tiempo_actual = time.time()
         archivos_backup = glob.glob(os.path.join(self.carpeta_backup, "*.json"))
@@ -333,13 +250,8 @@ class SyncDaemon:
         for ruta_archivo in archivos_backup:
             fecha_modificacion = os.path.getmtime(ruta_archivo)
             dias_antiguedad = (tiempo_actual - fecha_modificacion) / (24 * 3600)
-
             if dias_antiguedad > dias_limite:
                 try:
                     os.remove(ruta_archivo)
-                    print(f"Cache limpio: {os.path.basename(ruta_archivo)} borrado (mas de 30 dias).")
-                except OSError as e:
-                    print(f"Error al borrar archivo antiguo: {e}")
-
-
-
+                except OSError:
+                    pass
