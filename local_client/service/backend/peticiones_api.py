@@ -9,7 +9,7 @@ import requests
 from dotenv import load_dotenv
 
 # Ruta absoluta corregida para Pycharm
-from local_client.shared.models.user import User
+from shared.models.user import User
 
 load_dotenv()
 
