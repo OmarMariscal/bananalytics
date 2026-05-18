@@ -110,21 +110,19 @@ def load_or_create_model(barcode: str) -> tuple[SGDRegressor, bool, float]:
         or (total_examples or 0) < _settings.min_examples_cold_start
     )
 
-    if binary_data and not is_cold_start:
+    if binary_data:
         try:
             model = _deserialize(binary_data)
             logger.debug(
                 f"    📦 Modelo cargado · barcode={barcode} · "
                 f"ejemplos={total_examples} · rmse={stored_rmse:.3f}"
             )
-            return model, False, float(stored_rmse or 0.0)
+            return model, is_cold_start, float(stored_rmse or 0.0)
         except Exception as e:
-            # Pickle corrupto: reiniciar en lugar de abortar el proceso completo.
             logger.warning(f"    ⚠️  Pickle corrupto para {barcode}, reiniciando: {e}")
 
     logger.info(f"    🌱 Cold Start · barcode={barcode} · ejemplos_previos={total_examples}")
     return _create_new_model(), True, 0.0
-
 
 def incremental_train(
     model: SGDRegressor,
