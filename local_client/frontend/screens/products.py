@@ -5,14 +5,16 @@ from datetime import datetime
 from frontend.components.product_details import ProductDetailDialog
 from frontend.components.marquesin_text import TextoMarquesina
 from frontend.components.help import HelpIcon
+from frontend.components.image_cache import ImageCacheManager
 
 class Products(ft.Container):
-    def __init__(self, page, alerts):
+    def __init__(self, page, alerts, backend_service):
         super().__init__()
         self.expand = True 
         self.vertical_alignment = ft.MainAxisAlignment.START
         self.page = page
         self.height = page.height
+        self.backend_service = backend_service
         
         self.list_alerts_original = alerts 
         
@@ -62,7 +64,7 @@ class Products(ft.Container):
             columns=[
                 ft.DataColumn(ft.Text("Producto", weight="bold", color="#8D7A66")),
                 ft.DataColumn(ft.Text("Código", weight="bold", color="#8D7A66")),
-                ft.DataColumn(ft.Row([ft.Text("Clasificación", weight="bold", color="#8D7A66"), HelpIcon(help_id= 3 )])),
+                ft.DataColumn(ft.Row([ft.Text("Clasificación", weight="bold", color="#8D7A66"), HelpIcon(help_id= 3, aux ="" )])),
                 ft.DataColumn(ft.Text("Promedio de ventas", weight="bold", color="#8D7A66")),
                 ft.DataColumn(ft.Text("Prédiccion de ventas", weight="bold", color="#8D7A66")),
             ],
@@ -168,6 +170,8 @@ class Products(ft.Container):
             alerts_to_display.sort(key=lambda a: self._normalize_text(a.product_name), reverse=True)
 
         for alert in alerts_to_display:
+
+            path_local = ImageCacheManager.get_local_image_path(alert.image_url)
             if alert.type == "deficit":
                 bg_color, txt_color, label = "#FEE8E8", "#D00000", "DÉFICIT"
             elif alert.type == "superavit":
@@ -188,7 +192,7 @@ class Products(ft.Container):
                     cells=[
                         ft.DataCell(
                             ft.Row([
-                                ft.Image(src=alert.image_url, width=40, height=40, fit=ft.ImageFit.CONTAIN),
+                                ft.Image(src=path_local, width=40, height=40, fit=ft.ImageFit.CONTAIN),
                                 ft.Column([
                                     self.product_name_display,
                                     ft.Row([
@@ -225,7 +229,7 @@ class Products(ft.Container):
         return rows
 
     def _open_details_dialog(self, alert_obj):
-        dialog = ProductDetailDialog(alert_obj, self.page, self.backend)
+        dialog = ProductDetailDialog(alert_obj, self.page, self.backend_service)
         self.page.dialog = dialog
         dialog.open = True
         self.page.update()

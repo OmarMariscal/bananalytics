@@ -3,7 +3,7 @@ import flet as ft
 class LoadingDialog(ft.AlertDialog):
     def __init__(self, mensaje):
         super().__init__()
-        self.modal = True
+        self.modal = False
         self.bgcolor = ft.colors.ON_SURFACE_VARIANT
         
         self.texto_mensaje = ft.Text(mensaje, size=20, color=ft.colors.ON_SURFACE, weight="bold")

@@ -2,6 +2,7 @@ import flet as ft
 from frontend.screens.dashboard import Dashboard
 from frontend.screens.products import Products
 from frontend.components.loading_dialog import LoadingDialog
+from frontend.components.image_cache import ImageCacheManager
 
 class MainLayout(ft.Container):
     def __init__(self, page: ft.Page, backend_service):
@@ -25,7 +26,7 @@ class MainLayout(ft.Container):
 
         self._get_stats()
         self.new_dashboard = Dashboard(self.page, self._sync, self.dashboard_stats, self.list_alerts, self.backend_service, self.status_fetched)
-        self.new_products = Products(self.page, self.list_alerts)
+        self.new_products = Products(self.page, self.list_alerts, self.backend_service)
 
         self.dynamic_content.content = self.new_dashboard
 
@@ -77,11 +78,20 @@ class MainLayout(ft.Container):
         ], expand=True)
     
     def _get_stats(self):
-        self.loading_dialog.actualizar_mensaje("Cargando informacion de stats, por favor espera...")
+        self.loading_dialog.actualizar_mensaje("Cargando información de stats, por favor espera...")
+        self.loading_dialog.open = True
         self.page.update()
         self.dashboard_stats = self.backend_service.get_dashboard_stats()
+        
         self.loading_dialog.actualizar_mensaje("Cargando lista de productos, por favor espera...")
+        self.page.update()
         self.list_alerts = self.backend_service.get_alerts()
+        
+        # NUEVO: Sincronización de imágenes al iniciar
+        self.loading_dialog.actualizar_mensaje("Sincronizando galería de imágenes local...")
+        self.page.update()
+        ImageCacheManager.sync_all_images(self.list_alerts)
+        
         self.loading_dialog.open = False
         self.page.update()
 
@@ -199,33 +209,21 @@ class MainLayout(ft.Container):
             self.dashboard_stats = self.backend_service.get_dashboard_stats()
             self.loading_dialog.actualizar_mensaje("Cargando lista de productos, por favor espera...")
             self.page.update()
-            self.list_alerts = self.backend_service.get_alerts_prob()
+            self.list_alerts = self.backend_service.get_alerts()
+            
+            # NUEVO: Limpiar y descargar todo nuevamente en cada sincronización
+            self.loading_dialog.actualizar_mensaje("Actualizando caché de imágenes, por favor espera...")
+            self.page.update()
+            ImageCacheManager.sync_all_images(self.list_alerts)
             self.data_loaded = False
             self.page.update()
 
             self.new_dashboard = Dashboard(self.page, self._sync, self.dashboard_stats, self.list_alerts, self.backend_service, self.status_fetched)
-            self.new_products = Products(self.page, self.list_alerts)
+            self.new_products = Products(self.page, self.list_alerts, self.backend_service)
 
             self.dynamic_content.content = self.new_dashboard
         finally:
             self.loading_dialog.open = False
             self.page.update()
-            self.update()
-    
-    def _show_error_dialog(self):
-        def close_dlg(e):
-            confirm_dialog.open = False
-            self.page.update()
-
-        confirm_dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("Error de Conexión", color=ft.colors.ON_SURFACE, weight="bold"),
-            content=ft.Text("No se pudo establecer comunicación con el servidor.", color=ft.colors.ON_SURFACE, weight="bold"),
-            actions=[ft.TextButton("Entendido", on_click=close_dlg)],
-            bgcolor = ft.colors.ON_SURFACE_VARIANT
-        )
-        self.page.dialog = confirm_dialog
-        confirm_dialog.open = True
-        self.page.update()
 
     
