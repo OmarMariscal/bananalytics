@@ -1,10 +1,10 @@
 import flet as ft
-import datetime
 from datetime import datetime
 from frontend.components.product_details import ProductDetailDialog
 from frontend.components.marquesin_text import TextoMarquesina
 from frontend.components.loading_dialog import LoadingDialog
 from frontend.components.help import HelpIcon
+from frontend.components.image_cache import ImageCacheManager
 
 class Dashboard(ft.Container):
     def __init__(self, page, recharge, stats, alerts, backend_service, status_fetched):
@@ -132,7 +132,7 @@ class Dashboard(ft.Container):
                         
                         ft.Row([
                             self.status_button,
-                            HelpIcon(help_id= 1 if self.label == "● Online" else 2 )
+                            HelpIcon(help_id= 1 if self.label == "● Online" else 2 , aux ="")
                         ],)
                         
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
@@ -183,7 +183,7 @@ class Dashboard(ft.Container):
                                 ft.Text("Panel de productos", size=18, weight="bold", color=ft.colors.ON_SURFACE),
                                 ft.Text("AI-powered demand predictions", size=12, color="#8D7A66"),
                             ], alignment=ft.MainAxisAlignment.START),
-                            HelpIcon(help_id= 3 )
+                            HelpIcon(help_id= 3 , aux ="")
                         ], alignment=ft.MainAxisAlignment.SPACE_EVENLY
                     ),
                     
@@ -214,8 +214,8 @@ class Dashboard(ft.Container):
         def open_details(e):
             
             dialog = ProductDetailDialog(alert, self.page, self.backend_service)
-            self.page.overlay.append(dialog)
             dialog.open = True
+            self.page.overlay.append(dialog)
             self.page.update()
 
         if alert.type == "deficit":
@@ -231,6 +231,8 @@ class Dashboard(ft.Container):
             size_text=14,
             color=ft.colors.ON_SURFACE
         )
+
+        path_local = ImageCacheManager.get_local_image_path(alert.image_url)
 
         return ft.Container(
             bgcolor=ft.colors.SURFACE_VARIANT,
@@ -248,7 +250,7 @@ class Dashboard(ft.Container):
                 controls=[
                     ft.Container(
                         content=ft.Image(
-                            src=alert.image_url, 
+                            src=path_local, 
                             height=70, 
                             width=60, 
                             fit="contain",
@@ -303,8 +305,8 @@ class Dashboard(ft.Container):
     def _build_deviation_chart(self):
         deviation_data = []
         for p in self.list_alerts:
-            if p.avg_weekly_sales > 0:
-                dev = round(((p.prediction - p.avg_weekly_sales) / p.avg_weekly_sales) * 100, 2)
+            if p.percentage_average_deviation != 0:
+                dev = p.percentage_average_deviation
                 deviation_data.append({
                     "name": p.product_name,
                     "dev": dev,
@@ -314,11 +316,12 @@ class Dashboard(ft.Container):
         top_deviations = sorted(deviation_data, key=lambda x: x["abs_dev"], reverse=True)[:25]
         num_items = len(top_deviations)
         dynamic_width = 600 / num_items
+        dynamic_lines = 0
 
         bar_groups = []
         for i, item in enumerate(top_deviations):
             bar_color = "#2E7D32" if item["dev"] >= 0 else "#D32F2F"
-            
+            dynamic_lines = item["abs_dev"] if dynamic_lines < item["abs_dev"] else dynamic_lines
             bar_groups.append(
                 ft.BarChartGroup(
                     x=i,
@@ -336,6 +339,7 @@ class Dashboard(ft.Container):
 
         max_abs_val = max([x["abs_dev"] for x in top_deviations]) if top_deviations else 100
         y_limit = int(max_abs_val * 1.2)
+        dynamic_lines = dynamic_lines / 15
 
         chart = ft.BarChart(
             bar_groups=bar_groups,
@@ -347,7 +351,7 @@ class Dashboard(ft.Container):
             horizontal_grid_lines=ft.ChartGridLines(
                 color=ft.colors.with_opacity(0.2, "#8D7A66"), 
                 width=0.5,
-                interval=10,
+                interval=dynamic_lines,
             ),
             left_axis=ft.ChartAxis(
                 labels=[
@@ -375,3 +379,19 @@ class Dashboard(ft.Container):
             expand=True,
         )
         return chart
+    
+    def _show_error_dialog(self):
+        def close_dlg(e):
+            confirm_dialog.open = False
+            self.page.update()
+
+        confirm_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Error de Conexión", color=ft.colors.ON_SURFACE, weight="bold"),
+            content=ft.Text("No se pudo establecer comunicación con el servidor.", color=ft.colors.ON_SURFACE, weight="bold"),
+            actions=[ft.TextButton("Entendido", on_click=close_dlg)],
+            bgcolor = ft.colors.ON_SURFACE_VARIANT
+        )
+        self.page.dialog = confirm_dialog
+        confirm_dialog.open = True
+        self.page.update()
