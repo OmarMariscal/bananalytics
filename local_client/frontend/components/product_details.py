@@ -2,6 +2,8 @@ import flet as ft
 from datetime import datetime
 from frontend.components.marquesin_text import TextoMarquesina
 from frontend.components.loading_dialog import LoadingDialog
+from frontend.components.help import HelpIcon
+from frontend.components.image_cache import ImageCacheManager
 
 class ProductDetailDialog(ft.AlertDialog):
     def __init__(self, alert, page, backend_service):
@@ -14,14 +16,14 @@ class ProductDetailDialog(ft.AlertDialog):
         self.shape = ft.RoundedRectangleBorder(radius=20)
         self.content_padding = 0
 
-
-
         self.product_name_display = TextoMarquesina(
             texto=self.alert.product_name, 
             ancho_max=200,
             size_text=28,
             color=ft.colors.ON_SURFACE
         )
+
+        path_local = ImageCacheManager.get_local_image_path(alert.image_url)
 
         self.content = ft.Container(
             width=1000,
@@ -54,7 +56,7 @@ class ProductDetailDialog(ft.AlertDialog):
                         content=ft.Row([
                             ft.Row([
                                 ft.Container(
-                                    content=ft.Image(src=self.alert.image_url, width=130, height=130, fit="contain"),
+                                    content=ft.Image(src=path_local, width=130, height=130, fit="contain"),
                                     bgcolor=ft.colors.OUTLINE,
                                     border_radius=15,
                                     padding=10,
@@ -87,8 +89,8 @@ class ProductDetailDialog(ft.AlertDialog):
                                 self._build_status_indicators(self.alert.type),
                                 ft.Divider(height=20, color="transparent"),
                                 ft.Row(
-                                    [self._stat_box("Promedio de Ventas Semanales", f"{self.alert.avg_weekly_sales}", "", 260),
-                                    self._stat_box("Predicciones de Ventas", f"{self.alert.prediction}", f"Para el: {self.alert.objective_date}", 210),], 
+                                    [self._stat_box("Promedio de Ventas Semanales", f"{self.alert.avg_weekly_sales}", "", 260, ""),
+                                    self._stat_box("Predicciones de Ventas", f"{self.alert.prediction}", f"Para el: {self.alert.objective_date}", 210, f"{self.alert.margin_of_error}"),], 
                                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                                 spacing=0,
                                 width=500
@@ -177,7 +179,18 @@ class ProductDetailDialog(ft.AlertDialog):
             ft.Text(label, size=15, color="#8D7A66")
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5)
 
-    def _stat_box(self, title, value, text, wight):
+    def _stat_box(self, title, value, text, wight, margin):
+        # 1. Creamos la lista de controles básica
+        row_content = [
+            ft.Text(value, size=32, weight="bold", color=ft.colors.ON_SURFACE),
+        ]
+        
+        # 2. Solo agregamos el icono si realmente hay un margen/ayuda
+        if margin != "":
+            margin_ex=ft.Row([ft.Text(f"±{margin}", size=15, weight="bold", color="#8D7A66"), HelpIcon(help_id=4, aux=margin)],
+                             spacing=0)
+            row_content.append(margin_ex)
+
         return ft.Container(
             width=wight,
             bgcolor=ft.colors.ON_SURFACE_VARIANT,
@@ -189,7 +202,7 @@ class ProductDetailDialog(ft.AlertDialog):
                     ft.Text(title, size=13, color="#C38441", weight="w500"),
                 ], spacing=8),
                 ft.Column([
-                    ft.Text(value, size=32, weight="bold", color=ft.colors.ON_SURFACE),
+                    ft.Row(row_content),
                     ft.Text(text, size=14, color="#8D7A66"),
                 ], alignment=ft.MainAxisAlignment.START, spacing=5)
             ], spacing=5),

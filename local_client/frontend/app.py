@@ -31,6 +31,10 @@ class App:
                 outline="#333333"
             )
         )
+
+        page.fonts = {
+        "RobotoMono": "https://raw.githubusercontent.com/google/fonts/main/apache/robotomono/RobotoMono%5Bwght%5D.ttf"
+        }
         
 
         if self.svc.is_first_start():

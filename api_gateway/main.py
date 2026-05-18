@@ -1,9 +1,11 @@
 import os
 import requests
 import math
+import base64
 from datetime import datetime, date #Para generar fechas de registro
-from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks
-from fastapi.security import APIKeyHeader
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Response
+from fastapi.security import APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from typing import List
@@ -11,7 +13,7 @@ from typing import List
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 #Importamos las clases de la base de datos para hacer consultas e inserciones
-from models import Tienda, Producto, Venta, Prediccion
+from models import Tienda, Producto, Venta, Prediccion, Reporte
 
 #----------------------------- MODELOS DE DATOS -----------------------------
 # Molde para los productos individuales
@@ -78,6 +80,28 @@ def verify_api_key(api_key: str = Depends(api_key_header)):
         )
     return api_key
 
+#----------------------------- SEGURIDAD JWT -----------------------------
+security = HTTPBearer()
+ALGORITHM = "HS256"
+
+def verify_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        token = credentials.credentials
+        # Desencriptamos el token usando nuestra misma llave maestra
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        store_id: int = payload.get("id_negocio")
+        
+        if store_id is None:
+            raise HTTPException(status_code=401, detail="Token inválido: No contiene id_negocio")
+        return store_id
+        
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Acceso denegado: Token JWT inválido o expirado"
+        )
+#-------------------------------------------------------------------------
+
 #-------------------------------------------------- FUNCIONES AUXILIARES ----------------------------------------------
 
 #Función para procesar la cola de ventas en segundo plano**************************************************************
@@ -114,7 +138,6 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
         datos_clima = respuesta.json()
 
         #Extraemos las listas de datos (cada lista tiene 24 elementos, uno por hora del día)
-        horas_clima = datos_clima["hourly"]["time"]
         temperaturas = datos_clima["hourly"]["temperature_2m"]
         codigos_clima = datos_clima["hourly"]["weather_code"]
         
@@ -137,6 +160,12 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
 
                 #Llamamos a nuestra función ayudante y le pasamos el código y nuestra sesión "db"
                 producto_info = obtener_o_crear_producto(codigo, db)
+
+                if producto_info is None:
+                    # Si GO UPC falló y el producto no se pudo registrar en la base de datos central, ABORTAMOS la inserción de esta venta en particular
+                    # para evitar el error 'ForeignKeyViolation' que crashearía todo el bloque.
+                    print(f"⚠️ Venta omitida: El código {codigo} no existe en catálogo y GO UPC falló.")
+                    continue  # Salta a la siguiente iteración del for (al siguiente producto)
 
                 #Preparamos el registo para la tabla sales_database
                 nueva_venta = Venta(
@@ -164,6 +193,11 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
 
 #Función para buscar el producto en Neon, o lo descarga de Go UPC******************************************************
 def obtener_o_crear_producto(barcode: str, db: Session):
+    # Verificamos que contenga exclusivamente números y tenga una longitud comercial estándar (8 a 14 dígitos)
+    if not barcode.isdigit() or not (8 <= len(barcode) <= 14):
+        print(f"xX Código ignorado: '{barcode}' no tiene un formato comercial válido (EAN/UPC) Xx")
+        return None
+    
     #Buscamos en nuestra base de datos central primero
     producto_existente = db.query(Producto).filter(Producto.barcode == barcode).first()
     
@@ -184,7 +218,7 @@ def obtener_o_crear_producto(barcode: str, db: Session):
         
         #Si el producto no está registrado, Go UPC devuelve 404
         if respuesta.status_code == 404:
-            print(f"Advertencia: Producto {barcode} no encontrado.")
+            print(f"Advertencia: Producto {barcode} no encontrado en GO UPC.")
             nuevo_producto = Producto(
                 barcode=barcode,
                 product_name="Producto Desconocido",
@@ -230,16 +264,19 @@ def health_check():
     }
 
 #Registrar un nuevo negocio (Necesita autenticación con API Key)********************************************
-@app.post("/api/v1/business/register", dependencies=[Depends(verify_api_key)])
-def register_business(datos: RegistroNegocio, db: Session = Depends(get_db)): #Se guarda el json en la variable "datos" con el molde definido en la clase "RegistroNegocio". Además, se inyecta la sesión de la base de datos con "db" para usarla dentro de la función
+@app.post("/api/v1/business/register", dependencies=[Depends(verify_api_key)], status_code=status.HTTP_201_CREATED) # si todo sale bien, devuelve un 201 por defecto.
+def register_business(datos: RegistroNegocio, response: Response, db: Session = Depends(get_db)): #Se guarda el json en la variable "datos" con el molde definido en la clase "RegistroNegocio". Además, se inyecta la sesión de la base de datos con "db" para usarla dentro de la función y la variable response para modificar el código de estado si es necesario.
     try:
         #Verificar si el correo ya existe haciendo una consulta a la tabla Tienda buscando el email
         tienda_existente = db.query(Tienda).filter(Tienda.email == datos.email).first()
         
         if tienda_existente:
+            # Si hay error, cambiamos el código HTTP a 409 (Conflicto) y mandamos un mensaje de error
+            response.status_code = status.HTTP_409_CONFLICT
             return {
                 "status": "email_repeated",
                 "id_negocio": None,
+                "token": None,
                 "mensaje": "El correo ya se encuentra registrado."
             }
 
@@ -260,28 +297,43 @@ def register_business(datos: RegistroNegocio, db: Session = Depends(get_db)): #S
         #Refrescamos para que PostgreSQL nos devuelva el "store_id" que generó automáticamente
         db.refresh(nueva_tienda)
 
+        # GENERAMOS EL TOKEN JWT
+        datos_token = {"id_negocio": nueva_tienda.store_id}
+        token_jwt = jwt.encode(datos_token, SECRET_KEY, algorithm=ALGORITHM)
+
         return {
             "status": "exito",
             "id_negocio": str(nueva_tienda.store_id), #Lo mandamos como texto
+            "token": token_jwt, # Le mandamos el token jwt al frontend para que lo guarde
             "mensaje": "Negocio registrado correctamente. Coordenadas ancladas para el modelo predictivo."
         }
 
     except Exception as e:
-        #Si algo falla, deshacemos los cambios y enviamos error
+        #Si algo falla, deshacemos los cambios y enviamos un Error 500 Interno
         db.rollback()
+        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         return {
             "status": "fail",
             "id_negocio": None,
+            "token": None,
             "mensaje": f"Error de conexión con el servidor: {str(e)}"
         }
 
 #Sincronizar Ventas (Necesita autenticación con API Key)****************************************************
-@app.post("/api/v1/ventas/sync", dependencies=[Depends(verify_api_key)])
+@app.post("/api/v1/ventas/sync")
 def sync_ventas(
     datos: SincronizacionMensaje,  #Se guarda el json en la variable "datos" con el molde definido en la clase "SincronizacionMensaje"
     background_tasks: BackgroundTasks, #Inyectamos la cola de tareas en segundo plano para no hacer esperar al cliente local mientras procesamos el JSON
-    db: Session = Depends(get_db) #Conectamos la base de datos al endpoint para realizar una validación
+    db: Session = Depends(get_db), #Conectamos la base de datos al endpoint para realizar una validación
+    token_store_id: int = Depends(verify_jwt) # Inyectamos el ID del token
     ):
+
+    # Verificación JWT: Comparamos el ID de tienda que viene en el token con el ID de tienda que viene en el JSON. Si no coinciden, es un intento de fraude y rechazamos la petición.
+    if token_store_id != datos.id_store:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: El token de autenticación no coincide con la tienda solicitada."
+        )
 
     #Validación:Buscar la tienda en la base de datos
     tienda_existente = db.query(Tienda).filter(Tienda.store_id == datos.id_store).first()
@@ -311,16 +363,19 @@ def sync_ventas(
     }
 
 #Obtener Predicciones por Tienda (Necesita autenticación con API Key)***************************************
-@app.get("/api/v1/business/{store_id}/predictions", dependencies=[Depends(verify_api_key)])
-def get_predictions(store_id: int, db: Session = Depends(get_db)):
+@app.get("/api/v1/business/{store_id}/predictions")
+def get_predictions(store_id: int, db: Session = Depends(get_db), token_store_id: int = Depends(verify_jwt)):
     
+    if token_store_id != store_id:
+        raise HTTPException(status_code=403, detail="No puedes ver las predicciones de otra tienda.")
+
     # Obtenemos la fecha actual del servidor
     hoy = date.today()
 
     #Hacemos una consulta a la tabla "prediction_database", gracias a desnormalización realizada en models.py nos evitamos hacer un join
     resultados = db.query(Prediccion).filter(
         Prediccion.store_id == store_id,
-        Prediccion.objetive_date > hoy #que la fecha de objetivo sea mayor a la de hoy
+        Prediccion.objective_date > hoy #que la fecha de objetivo sea mayor a la de hoy
     ).all()
 
     respuesta = []
@@ -334,22 +389,28 @@ def get_predictions(store_id: int, db: Session = Depends(get_db)):
             desviacion = 0.0
         
         respuesta.append({
+            "barcode": pred.barcode,
             "product_name": pred.product_name,
-            "Category": pred.category,
+            "category": pred.category,
             "image_url": pred.image_url,
-            "objetive_date": pred.objetive_date.strftime("%Y-%m-%d"), #Convertimos la fecha a texto
+            "objective_date": pred.objective_date.strftime("%Y-%m-%d"), #Convertimos la fecha a texto
             "prediction": pred.prediction,
-            "percentage_average_deviation": pred.percentage_average_deviation,
             "feature": pred.feature,
-            "type": pred.type
+            "type": pred.type,
+            "percentage_average_deviation": desviacion,
+            "avg_weekly_sales": pred.avg_weekly_sales,
+            "margin_of_error": pred.margin_of_error
         })
         
-    return respuesta
+    return {"predictions": respuesta}
 
 #Obtener Historial de Ventas de un Producto Específico (Necesita autenticación con API Key)*****************
-@app.get("/api/v1/business/{store_id}/{barcode}", dependencies=[Depends(verify_api_key)])
-def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db)):
+@app.get("/api/v1/business/{store_id}/{barcode}")
+def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db), token_store_id: int = Depends(verify_jwt)):
     
+    if token_store_id != store_id:
+        raise HTTPException(status_code=403, detail="No puedes ver el historial de otra tienda.")
+
     #Agrupamos por fecha y suma las cantidades de la base de datos, filtrando por tienda y código de barras.
     resultados = db.query(
         Venta.date.label("fecha"), 
@@ -368,8 +429,35 @@ def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db)
     
     for fila in resultados:
         respuesta.append({
-            "fecha": fila.fecha.strftime("%Y-%m-%d"),
-            "total_vendido": fila.total_vendido
+            "date": fila.fecha.strftime("%Y-%m-%d"),
+            "volume": fila.total_vendido
         })
         
-    return respuesta
+    return {"history": respuesta}
+
+#Obtener el Reporte Semanal más reciente (Necesita autenticación con JWT)***********************************
+@app.get("/api/v1/business/{store_id}/report")
+def get_latest_report(store_id: int, db: Session = Depends(get_db), token_store_id: int = Depends(verify_jwt)):
+    
+    # Regla Anti-Fraude
+    if token_store_id != store_id:
+        raise HTTPException(status_code=403, detail="No puedes descargar reportes de otra tienda.")
+
+    # Buscamos el reporte ordenando por fecha de creación descendente y tomando solo el primero (.first())
+    reporte_reciente = db.query(Reporte).filter(
+        Reporte.store_id == store_id
+    ).order_by(Reporte.created_at.desc()).first()
+
+    if not reporte_reciente:
+        raise HTTPException(status_code=404, detail="No se encontraron reportes generados para esta tienda.")
+
+    # Convertimos el archivo binario a una cadena de texto (Base64) para que pueda viajar dentro del JSON
+    pdf_base64 = base64.b64encode(reporte_reciente.pdf_content).decode('utf-8')
+
+    return {
+        "response": pdf_base64
+        #,
+        #"period_from": reporte_reciente.period_from.strftime("%Y-%m-%d"),
+        #"period_to": reporte_reciente.period_to.strftime("%Y-%m-%d"),
+        #"created_at": reporte_reciente.created_at.strftime("%Y-%m-%d %H:%M:%S")
+    }
