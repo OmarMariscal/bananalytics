@@ -7,11 +7,12 @@ Tablas mapeadas (esquema del documento de Arquitectura):
   · sales_database      → Venta
   · prediction_database → Prediccion  (incluye store_id y percentage_average_deviation)
   · models_database     → ModeloML
+  · reports_database    → Reporte
 
 Decisiones de diseño:
   - BigInteger en sale_id y prediction.id por volumen esperado a largo plazo.
   - ENUM de PostgreSQL para TipoAlerta (integridad sin validación en app).
-  - UniqueConstraint en Prediccion(store_id, barcode, objetive_date).
+  - UniqueConstraint en Prediccion(store_id, barcode, objective_date).
   - weather_resume_wmo_code: Integer WMO — coherencia con Open-Meteo en producción.
   - prediction: Integer — las unidades a vender son siempre enteras.
   - percentage_average_deviation: Float — variación % para diagnóstico y frontend.
@@ -23,7 +24,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger, Boolean, Column, Date, DateTime, Enum,
     Float, ForeignKey, Index, Integer, LargeBinary,
-    String, Time, UniqueConstraint,
+    String, Time, UniqueConstraint, func
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -51,6 +52,7 @@ class Tienda(Base):
 
     ventas       = relationship("Venta",     back_populates="tienda",  lazy="select")
     predicciones = relationship("Prediccion", back_populates="tienda", lazy="select")
+    reportes     = relationship("Reporte", back_populates="tienda", lazy="select")
 
     def __repr__(self) -> str:
         return f"<Tienda id={self.store_id} ciudad='{self.city}'>"
@@ -99,12 +101,12 @@ class Prediccion(Base):
     __tablename__ = "prediction_database"
     __table_args__ = (
         UniqueConstraint(
-            "store_id", "barcode", "objetive_date",
+            "store_id", "barcode", "objective_date",
             name="uq_prediccion_tienda_producto_fecha",
         ),
     )
 
-    id       = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     store_id = Column(Integer, ForeignKey("stores_database.store_id"), nullable=False, index=True)
     barcode  = Column(String(50), ForeignKey("product_database.barcode"), nullable=False, index=True)
 
@@ -113,11 +115,15 @@ class Prediccion(Base):
     category     = Column(String(100))
     image_url    = Column(String(500))
 
-    objetive_date               = Column(Date,    nullable=False)
+    objective_date               = Column(Date,    nullable=False)
     prediction                  = Column(Integer, nullable=False)        # Unidades enteras
     feature                     = Column(Boolean, default=False, nullable=False)  # es_destacado
     type                        = Column(Enum(TipoAlerta, name="tipo_alerta"), default=TipoAlerta.none, nullable=False)
     percentage_average_deviation = Column(Float,   nullable=False)       # Variación % RF-05
+
+    # --- NUEVAS COLUMNAS AGREGADAS ---
+    avg_weekly_sales             = Column(Integer, nullable=False, default=0)
+    margin_of_error              = Column(Integer, nullable=False, default=0)
 
     tienda   = relationship("Tienda",   back_populates="predicciones")
     producto = relationship("Producto", back_populates="predicciones")
@@ -125,7 +131,7 @@ class Prediccion(Base):
     def __repr__(self) -> str:
         return (
             f"<Prediccion store={self.store_id} barcode='{self.barcode}' "
-            f"fecha={self.objetive_date} pred={self.prediction}>"
+            f"fecha={self.objective_date} pred={self.prediction}>"
         )
 
 
@@ -148,3 +154,20 @@ class ModeloML(Base):
             f"<ModeloML barcode='{self.barcode}' "
             f"ejemplos={self.total_examples} mse={self.last_mse}>"
         )
+    
+
+class Reporte(Base):
+    __tablename__ = "reports_database"
+
+    report_id    = Column(BigInteger, primary_key=True, autoincrement=True)
+    store_id     = Column(Integer, ForeignKey("stores_database.store_id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at   = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    period_from  = Column(Date, nullable=False)
+    period_to    = Column(Date, nullable=False)
+    pdf_content  = Column(LargeBinary, nullable=False)
+    file_size_kb = Column(Integer, nullable=False)
+
+    tienda = relationship("Tienda", back_populates="reportes")
+
+    def __repr__(self) -> str:
+        return f"<Reporte id={self.report_id} store={self.store_id} fecha='{self.created_at}'>"
