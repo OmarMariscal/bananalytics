@@ -233,9 +233,9 @@ def obtener_o_crear_producto(barcode: str, db: Session):
             
             nuevo_producto = Producto(
                 barcode=barcode,
-                product_name=info_producto.get("name", "Nombre no disponible"),
-                category=info_producto.get("category", "Sin Categoría"),
-                image_url=info_producto.get("imageUrl", "Sin Imagen")
+                product_name=info_producto.get("name") or "Nombre no disponible",
+                category=info_producto.get("category") or "Sin Categoría",
+                image_url=info_producto.get("imageUrl") or "Sin Imagen"
             )
             print(f"¡Producto {nuevo_producto.product_name} descargado de GO UPC!")
 
@@ -404,6 +404,33 @@ def get_predictions(store_id: int, db: Session = Depends(get_db), token_store_id
         
     return {"predictions": respuesta}
 
+#Obtener el Reporte Semanal más reciente (Necesita autenticación con JWT)***********************************
+@app.get("/api/v1/business/{store_id}/report")
+def get_latest_report(store_id: int, db: Session = Depends(get_db), token_store_id: int = Depends(verify_jwt)):
+    
+    # Regla Anti-Fraude
+    if token_store_id != store_id:
+        raise HTTPException(status_code=403, detail="No puedes descargar reportes de otra tienda.")
+
+    # Buscamos el reporte ordenando por fecha de creación descendente y tomando solo el primero (.first())
+    reporte_reciente = db.query(Reporte).filter(
+        Reporte.store_id == store_id
+    ).order_by(Reporte.created_at.desc()).first()
+
+    if not reporte_reciente:
+        raise HTTPException(status_code=404, detail="No se encontraron reportes generados para esta tienda.")
+
+    # Convertimos el archivo binario a una cadena de texto (Base64) para que pueda viajar dentro del JSON
+    pdf_base64 = base64.b64encode(reporte_reciente.pdf_content).decode('utf-8')
+
+    return {
+        "response": pdf_base64
+        #,
+        #"period_from": reporte_reciente.period_from.strftime("%Y-%m-%d"),
+        #"period_to": reporte_reciente.period_to.strftime("%Y-%m-%d"),
+        #"created_at": reporte_reciente.created_at.strftime("%Y-%m-%d %H:%M:%S")
+    }
+
 #Obtener Historial de Ventas de un Producto Específico (Necesita autenticación con API Key)*****************
 @app.get("/api/v1/business/{store_id}/{barcode}")
 def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db), token_store_id: int = Depends(verify_jwt)):
@@ -434,30 +461,3 @@ def get_sales_history(store_id: int, barcode: str, db: Session = Depends(get_db)
         })
         
     return {"history": respuesta}
-
-#Obtener el Reporte Semanal más reciente (Necesita autenticación con JWT)***********************************
-@app.get("/api/v1/business/{store_id}/report")
-def get_latest_report(store_id: int, db: Session = Depends(get_db), token_store_id: int = Depends(verify_jwt)):
-    
-    # Regla Anti-Fraude
-    if token_store_id != store_id:
-        raise HTTPException(status_code=403, detail="No puedes descargar reportes de otra tienda.")
-
-    # Buscamos el reporte ordenando por fecha de creación descendente y tomando solo el primero (.first())
-    reporte_reciente = db.query(Reporte).filter(
-        Reporte.store_id == store_id
-    ).order_by(Reporte.created_at.desc()).first()
-
-    if not reporte_reciente:
-        raise HTTPException(status_code=404, detail="No se encontraron reportes generados para esta tienda.")
-
-    # Convertimos el archivo binario a una cadena de texto (Base64) para que pueda viajar dentro del JSON
-    pdf_base64 = base64.b64encode(reporte_reciente.pdf_content).decode('utf-8')
-
-    return {
-        "response": pdf_base64
-        #,
-        #"period_from": reporte_reciente.period_from.strftime("%Y-%m-%d"),
-        #"period_to": reporte_reciente.period_to.strftime("%Y-%m-%d"),
-        #"created_at": reporte_reciente.created_at.strftime("%Y-%m-%d %H:%M:%S")
-    }
