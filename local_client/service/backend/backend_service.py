@@ -9,15 +9,15 @@ import base64
 import threading
 from datetime import datetime, date, timedelta
 
-from local_client.shared.models.prediction import PredictionAlert
-from local_client.shared.models.info_config import ConfigStats
-from local_client.shared.models.user import User
-from local_client.service.backend.db.sqlite_manager import SQLiteManager
-from local_client.service.backend.sync.sync import SyncDaemon
-from local_client.service.backend.config.config_manager import ConfigManager
-from local_client.service.backend.peticiones_api import ApiClient
-from local_client.service.backend.scanner_listener import ScannerListener
-from local_client.service.backend.notification_manager import NotificationManager
+from shared.models.prediction import PredictionAlert
+from shared.models.info_config import ConfigStats
+from shared.models.user import User
+from service.backend.db.sqlite_manager import SQLiteManager
+from service.backend.sync.sync import SyncDaemon
+from service.backend.config.config_manager import ConfigManager
+from service.backend.peticiones_api import ApiClient
+from service.backend.scanner_listener import ScannerListener
+from service.backend.notification_manager import NotificationManager
 
 
 class BackendService:
@@ -266,5 +266,6 @@ class BackendService:
 
             # Lanzamos la alerta visual de Windows
             self.notifier.notify_new_report(ruta_final, lunes_inicio, domingo_cierre)
+            print("La cosa llegó, pa")
         except Exception as e:
             print(f"[BackendService] Error construyendo el PDF: {e}")

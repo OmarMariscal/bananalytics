@@ -11,8 +11,8 @@ import requests
 from requests.exceptions import RequestException
 from datetime import date, datetime, timedelta
 
-from local_client.shared.models.user import User
-from local_client.shared.models.info_config import ConfigStats
+from shared.models.user import User
+from shared.models.info_config import ConfigStats
 
 
 class ConfigManager:

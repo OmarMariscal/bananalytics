@@ -38,7 +38,7 @@ class Dashboard(ft.Container):
             self._fetch_data_from_server()
             self._build_ui_content()
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error desde {__name__}: {e}")
         finally:
             self.page.update()
             self.update()
@@ -315,7 +315,7 @@ class Dashboard(ft.Container):
 
         top_deviations = sorted(deviation_data, key=lambda x: x["abs_dev"], reverse=True)[:25]
         num_items = len(top_deviations)
-        dynamic_width = 600 / num_items
+        dynamic_width = 600 / num_items if num_items != 0 else 1
         dynamic_lines = 0
 
         bar_groups = []
