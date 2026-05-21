@@ -1,21 +1,20 @@
 import flet as ft
-import datetime
 import unicodedata
 from datetime import datetime
+import traceback
 from frontend.components.product_details import ProductDetailDialog
 from frontend.components.marquesin_text import TextoMarquesina
 from frontend.components.help import HelpIcon
 from frontend.components.image_cache import ImageCacheManager
+from frontend.components.loading_dialog import LoadingDialog
+from frontend.components.show_error import ShowError
 
 class Products(ft.Container):
     def __init__(self, page, alerts, backend_service):
         super().__init__()
         self.expand = True 
-        self.vertical_alignment = ft.MainAxisAlignment.START
         self.page = page
-        self.height = page.height
         self.backend_service = backend_service
-        
         self.list_alerts_original = alerts 
         
         self.current_filter = None 
@@ -64,7 +63,7 @@ class Products(ft.Container):
             columns=[
                 ft.DataColumn(ft.Text("Producto", weight="bold", color="#8D7A66")),
                 ft.DataColumn(ft.Text("Código", weight="bold", color="#8D7A66")),
-                ft.DataColumn(ft.Row([ft.Text("Clasificación", weight="bold", color="#8D7A66"), HelpIcon(help_id= 3, aux ="" )])),
+                ft.DataColumn(ft.Row([ft.Text("Clasificación", weight="bold", color="#8D7A66"), HelpIcon(help_id=3, aux="")])),
                 ft.DataColumn(ft.Text("Promedio de ventas", weight="bold", color="#8D7A66")),
                 ft.DataColumn(ft.Text("Prédiccion de ventas", weight="bold", color="#8D7A66")),
             ],
@@ -74,6 +73,7 @@ class Products(ft.Container):
         ui = ft.Container(
             padding=30,
             expand=True,
+            alignment=ft.alignment.top_left,
             bgcolor=ft.colors.BACKGROUND,
             content=ft.Column(
                 scroll=ft.ScrollMode.ADAPTIVE,
@@ -151,6 +151,31 @@ class Products(ft.Container):
         rows = []
         alerts_to_display = self.list_alerts_original.copy()
 
+        if len(alerts_to_display) == 0:
+            path_local = ImageCacheManager.get_local_image_path("")
+            self.product_name_display = TextoMarquesina(
+                texto="Sin alertas pendientes", 
+                ancho_max=340,
+                size_text=14,
+                color=ft.colors.ON_SURFACE
+            )
+            rows.append(
+                ft.DataRow(
+                    cells=[
+                        ft.DataCell(
+                            ft.Row([
+                                ft.Image(src=path_local, width=40, height=40, fit=ft.ImageFit.CONTAIN),
+                                self.product_name_display
+                            ], spacing=10)
+                        ),
+                        ft.DataCell(ft.Row([ft.Text("", color="#8D7A66")])),
+                        ft.DataCell(ft.Text("", color="#8D7A66")),
+                        ft.DataCell(ft.Text("", color="#8D7A66")),
+                        ft.DataCell(ft.Text("", color="#8D7A66")),
+                    ]
+                )
+            )
+
         search_value = self.search_field.value if hasattr(self, 'search_field') else ""
         normalized_query = self._normalize_text(search_value)
         
@@ -170,7 +195,6 @@ class Products(ft.Container):
             alerts_to_display.sort(key=lambda a: self._normalize_text(a.product_name), reverse=True)
 
         for alert in alerts_to_display:
-
             path_local = ImageCacheManager.get_local_image_path(alert.image_url)
             if alert.type == "deficit":
                 bg_color, txt_color, label = "#FEE8E8", "#D00000", "DÉFICIT"
@@ -229,7 +253,44 @@ class Products(ft.Container):
         return rows
 
     def _open_details_dialog(self, alert_obj):
-        dialog = ProductDetailDialog(alert_obj, self.page, self.backend_service)
-        self.page.dialog = dialog
-        dialog.open = True
-        self.page.update()
+        self.loading_dialog = LoadingDialog("Obteniendo información del producto...")
+        self.page.open(self.loading_dialog)
+
+        try:
+            full_history = self.backend_service.get_sales_history(alert_obj.barcode)
+            history_data = full_history[-90:] if full_history else []
+            
+            self.page.close(self.loading_dialog)
+        except Exception as ex:
+            error = traceback.format_exc()
+            print("------------------------------------------------------------------")
+            print(f"Error: {__name__}\nDiagnóstico: {error}")
+            self.page.close(self.loading_dialog)
+            print("------------------------------------------------------------------")
+            
+            esperar_usuario = self._show_error_dialog(
+                title="Error de historial de ventas", 
+                menssage="Error al cargar el historial de ventas",
+                usar_evento=True
+            )
+            
+            if esperar_usuario:
+                esperar_usuario.wait()
+
+            history_data=[]
+
+        data_package = {
+            "alert": alert_obj,
+            "history": history_data
+        }
+        
+        def reopen_function(pkg):
+            dialog = ProductDetailDialog(pkg, self.page, reopen_function)
+            self.page.open(dialog)
+        
+        reopen_function(data_package)
+    
+    def _show_error_dialog(self, title, menssage, usar_evento=True): # 👈 Agregamos usar_evento por defecto
+        dialog = ShowError(self.page, title, menssage, usar_evento=usar_evento)
+        self.page.open(dialog)
+        return dialog.click_event

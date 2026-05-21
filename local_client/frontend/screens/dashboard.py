@@ -1,10 +1,13 @@
 import flet as ft
 from datetime import datetime
+import traceback
+
 from frontend.components.product_details import ProductDetailDialog
 from frontend.components.marquesin_text import TextoMarquesina
 from frontend.components.loading_dialog import LoadingDialog
 from frontend.components.help import HelpIcon
 from frontend.components.image_cache import ImageCacheManager
+from frontend.components.show_error import ShowError
 
 class Dashboard(ft.Container):
     def __init__(self, page, recharge, stats, alerts, backend_service, status_fetched):
@@ -19,7 +22,6 @@ class Dashboard(ft.Container):
         self.status_fetched = status_fetched
         self.is_online = False
         self.label = ""
-        
         self.date = ""
         self.status_button = ft.Container(on_click=self._handle_sync)
         
@@ -38,27 +40,41 @@ class Dashboard(ft.Container):
             self._fetch_data_from_server()
             self._build_ui_content()
         except Exception as e:
-            print(f"Error desde {__name__}: {e}")
+            error = traceback.format_exc()
+            print("------------------------------------------------------------------")
+            print(f"Error: {__name__}Diagnóstico: {error}")
+            print("------------------------------------------------------------------")
+            esperar_usuario = self._show_error_dialog("Error de dashboard", "Error al construir el dashboard", usar_evento=True)
+            esperar_usuario.wait()
+            self.page.window_close()
         finally:
             self.page.update()
             self.update()
 
     def _update_status_ui(self):
-        # SOLO pregunta al servidor si es la primera vez
         if not self.status_fetched:
             self.loading_dialog = LoadingDialog("Obteniendo estatus del servidor, por favor espera...")
-            self.loading_dialog.open = True
-            self.page.dialog = self.loading_dialog
-            self.page.update()
-            
-            # Petición real al servidor
-            self.is_online = self.backend_service.get_server_status()
-            self.status_fetched = True # Marcamos que ya tenemos el dato
-            
-            self.loading_dialog.open = False
-            self.page.update()
+            self.page.open(self.loading_dialog)
+
+            try:
+                self.is_online = self.backend_service.get_server_status()
+            except Exception as ex:
+                error = traceback.format_exc()
+                print("------------------------------------------------------------------")
+                print(f"Error: {__name__}Diagnóstico: {error}")
+                print("------------------------------------------------------------------")
+                self.page.close(self.loading_dialog)
+                esperar_usuario = self._show_error_dialog(
+                    "Error de conexión", 
+                    "No se pudo verificar el estatus del servidor, operando en modo Offline.", 
+                    usar_evento=True
+                )
+                esperar_usuario.wait()
+                self.is_online = False
+
+            self.status_fetched = True 
+            self.page.close(self.loading_dialog)
         
-        # El resto del código usa self.is_online (ya sea nuevo o guardado)
         color_bg = "#E8FCE8" if self.is_online else "#FCE8E8"
         color_text = "#2E7D32" if self.is_online else "#C85050"
         self.label = "● Online" if self.is_online else "● Offline"
@@ -88,24 +104,28 @@ class Dashboard(ft.Container):
 
     def _handle_sync(self, e):
         self.loading_dialog = LoadingDialog("Intentando sincronizar con el servidor, por favor espera...")
-        self.loading_dialog.open = True
-        self.page.dialog = self.loading_dialog
-        self.page.update()
+        self.page.open(self.loading_dialog)
 
         is_sync = False
         try:
             is_sync = self.backend_service.sync()
             if is_sync:
-                self.status_fetched = False # Forzamos que la próxima carga consulte al server
+                self.page.close(self.loading_dialog)
+                self.status_fetched = False
                 self.recharge() 
                 return
             else:
-                self._show_error_dialog()
-                
+                self.page.close(self.loading_dialog)
+                esperar_usuario = self._show_error_dialog("Error de conexión", "No se pudo establecer conexión con el servidor", usar_evento=True)
+                esperar_usuario.wait()
         except Exception as ex:
-            print(f"Error de sincronización: {ex}")
-            self.loading_dialog.open = False
-            self.page.update()
+            error = traceback.format_exc()
+            print("------------------------------------------------------------------")
+            print(f"Error: {__name__}Diagnóstico: {error}")
+            print("------------------------------------------------------------------")
+            self.page.close(self.loading_dialog)
+            esperar_usuario = self._show_error_dialog("Error al sincronizar", "Durante el proceso de sincronización hubo un error, intente de nuevo", usar_evento=True)
+            esperar_usuario.wait()
         
         if not is_sync and self.page:
             self._build_ui_content()
@@ -113,7 +133,6 @@ class Dashboard(ft.Container):
 
     def _on_button_hover(self, e, original_bg):
         e.control.bgcolor = ft.colors.BLACK12 if e.data == "true" else original_bg
-        
         if e.control.page:
             e.control.update()
 
@@ -128,13 +147,11 @@ class Dashboard(ft.Container):
                         ft.Column([
                             ft.Text("Estatus General de Productos", size=24, weight="bold", color=ft.colors.ON_SURFACE),
                             ft.Text(self.date, size=14, color="#8D7A66"),
-                        ], spacing=2),
-                        
+                        ], spacing=0),
                         ft.Row([
                             self.status_button,
                             HelpIcon(help_id= 1 if self.label == "● Online" else 2 , aux ="")
                         ],)
-                        
                     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     
                     ft.Divider(height=20, color="transparent"),
@@ -145,8 +162,6 @@ class Dashboard(ft.Container):
                         self._stat_card("Sincronizaciones Offline Pendientes", self.dashboard_stats["pending_syncs"], "/icon_sky.png", "#FDF3E7"),
                     ], spacing=20),
 
-                    
-                    
                     ft.Container(
                         expand=True,
                         bgcolor=ft.colors.SURFACE_VARIANT,
@@ -165,16 +180,40 @@ class Dashboard(ft.Container):
         )
 
     def _build_right_section(self):
-
         alert_cards = []
-        for alert in self.list_alerts:
-            alert_cards.append(self._create_alert_card(alert))
 
+        if len(self.list_alerts) != 0:
+            for alert in self.list_alerts:
+                alert_cards.append(self._create_alert_card(alert))
+            list_products = ft.ListView(
+                controls=alert_cards,
+                spacing=15,
+                expand=True
+            )
+        else:
+            alert_cards.append(
+                ft.Container(
+                    content=ft.Row([
+                        ft.Text("Sin alertas pendientes", color="#8D7A66", weight="bold")
+                    ], alignment=ft.MainAxisAlignment.CENTER),
+                    bgcolor=ft.colors.SURFACE_VARIANT,
+                    border_radius=15,
+                    padding=15,
+                    margin=ft.margin.only(left=15, right=15),
+                    border=ft.border.all(1, "#E0E0E0"),
+                )
+            )
+            list_products = ft.ListView(
+                controls=alert_cards,
+                spacing=15,
+                expand=True
+            )
+            
         return ft.Container(
             expand=1,
             bgcolor=ft.colors.BACKGROUND,
             border=ft.border.only(left=ft.BorderSide(1, "#E0E0E0")),
-            padding=10,
+            padding=20,
             content=ft.Column(
                 controls=[
                     ft.Row(
@@ -182,20 +221,19 @@ class Dashboard(ft.Container):
                             ft.Column([
                                 ft.Text("Panel de productos", size=18, weight="bold", color=ft.colors.ON_SURFACE),
                                 ft.Text("AI-powered demand predictions", size=12, color="#8D7A66"),
-                            ], alignment=ft.MainAxisAlignment.START),
-                            HelpIcon(help_id= 3 , aux ="")
-                        ], alignment=ft.MainAxisAlignment.SPACE_EVENLY
+                            ], alignment=ft.MainAxisAlignment.START, spacing=2),
+                            HelpIcon(help_id=3, aux="")
+                        ], 
+                        alignment=ft.MainAxisAlignment.SPACE_EVENLY
                     ),
                     
                     ft.Divider(height=20, color="transparent"),
-                    
-                    ft.ListView(
-                        controls=alert_cards,
-                        spacing=15,
+                    ft.Container(
+                        content=list_products,
                         expand=True
-                    )
+                    ),
                 ],
-                expand=True
+                expand=True,
             )
         )
 
@@ -205,18 +243,40 @@ class Dashboard(ft.Container):
             if e.data == "true":
                 e.control.scale = 1.08
                 e.control.bgcolor = ft.colors.OUTLINE
-            else:  # Mouse sale
+            else:
                 e.control.scale = 1.0
                 e.control.bgcolor = ft.colors.SURFACE_VARIANT
-            
             e.control.update()
 
         def open_details(e):
+            self.loading_dialog = LoadingDialog("Obteniendo información del producto...")
+            self.page.open(self.loading_dialog)
+
+            try:
+                full_history = self.backend_service.get_sales_history(alert.barcode)
+                history_data = full_history[-90:] 
+            except Exception as ex:
+                error = traceback.format_exc()
+                print("------------------------------------------------------------------")
+                print(f"Error: {__name__}Diagnóstico: {error}")
+                print("------------------------------------------------------------------")
+                self.page.close(self.loading_dialog)
+                esperar_usuario = self._show_error_dialog(title="Error de historial de ventas", menssage="Error al cargar el historial de ventas", usar_evento=True)
+                esperar_usuario.wait()
+                history_data = []
+        
+            self.page.close(self.loading_dialog)
             
-            dialog = ProductDetailDialog(alert, self.page, self.backend_service)
-            dialog.open = True
-            self.page.overlay.append(dialog)
-            self.page.update()
+            data_package = {
+                "alert": alert,
+                "history": history_data
+            }
+
+            def reopen_function(pkg):
+                dialog = ProductDetailDialog(pkg, self.page, reopen_function)
+                self.page.open(dialog)
+
+            reopen_function(data_package)
 
         if alert.type == "deficit":
             badge_bg, badge_color, badge_text = "#FCE8E8", "#D32F2F", f"Déficit: {alert.prediction} units"
@@ -240,9 +300,7 @@ class Dashboard(ft.Container):
             padding=15,
             margin=ft.margin.only(left=15, right=15),
             border=ft.border.all(1, "#E0E0E0"),
-            
             animate_scale=ft.Animation(300, ft.AnimationCurve.DECELERATE),
-            
             on_hover=on_hover,
             on_click=open_details,
             
@@ -281,7 +339,6 @@ class Dashboard(ft.Container):
         )
 
     def _stat_card(self, title, value, icon, icon_bg):
-        """Función auxiliar para crear las tarjetas pequeñas de estadísticas de la izquierda"""
         return ft.Container(
             expand=1,
             bgcolor=ft.colors.SURFACE_VARIANT,
@@ -306,7 +363,7 @@ class Dashboard(ft.Container):
         deviation_data = []
         for p in self.list_alerts:
             if p.percentage_average_deviation != 0:
-                dev = p.percentage_average_deviation
+                dev = round(p.percentage_average_deviation,2)
                 deviation_data.append({
                     "name": p.product_name,
                     "dev": dev,
@@ -316,12 +373,13 @@ class Dashboard(ft.Container):
         top_deviations = sorted(deviation_data, key=lambda x: x["abs_dev"], reverse=True)[:25]
         num_items = len(top_deviations)
         dynamic_width = 600 / num_items if num_items != 0 else 1
-        dynamic_lines = 0
+        max_abs_val = max([x["abs_dev"] for x in top_deviations]) if top_deviations else 100
+        y_limit = int(max_abs_val * 1.2)
+        dynamic_lines = (y_limit if y_limit > 0 else 1) / 15
 
         bar_groups = []
         for i, item in enumerate(top_deviations):
             bar_color = "#2E7D32" if item["dev"] >= 0 else "#D32F2F"
-            dynamic_lines = item["abs_dev"] if dynamic_lines < item["abs_dev"] else dynamic_lines
             bar_groups.append(
                 ft.BarChartGroup(
                     x=i,
@@ -336,10 +394,6 @@ class Dashboard(ft.Container):
                     ],
                 )
             )
-
-        max_abs_val = max([x["abs_dev"] for x in top_deviations]) if top_deviations else 100
-        y_limit = int(max_abs_val * 1.2)
-        dynamic_lines = dynamic_lines / 15
 
         chart = ft.BarChart(
             bar_groups=bar_groups,
@@ -380,18 +434,11 @@ class Dashboard(ft.Container):
         )
         return chart
     
-    def _show_error_dialog(self):
-        def close_dlg(e):
-            confirm_dialog.open = False
-            self.page.update()
+    def _show_error_dialog(self, title, menssage, usar_evento=False):
+        dialog = ShowError(self.page, title, menssage, usar_evento=usar_evento)
+        self.page.open(dialog)
+        return dialog.click_event
 
-        confirm_dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("Error de Conexión", color=ft.colors.ON_SURFACE, weight="bold"),
-            content=ft.Text("No se pudo establecer comunicación con el servidor.", color=ft.colors.ON_SURFACE, weight="bold"),
-            actions=[ft.TextButton("Entendido", on_click=close_dlg)],
-            bgcolor = ft.colors.ON_SURFACE_VARIANT
-        )
-        self.page.dialog = confirm_dialog
-        confirm_dialog.open = True
-        self.page.update()
+    def refresh_stats(self, stats):
+        self.dashboard_stats = stats
+        self._build_ui_content()

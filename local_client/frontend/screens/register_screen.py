@@ -1,9 +1,11 @@
 import flet as ft
 import re
+import time
+import traceback
 from frontend.components.btn_validate import PrimaryButton
 from frontend.components.loading_dialog import LoadingDialog
 from shared.models.user import User
-import time
+from frontend.components.show_error import ShowError
 
 class RegisterScreen(ft.Column):
     def __init__(self, backend_service, on_success):
@@ -136,14 +138,11 @@ class RegisterScreen(ft.Column):
             ft.Row(
                 controls=[white_card],
                 alignment=ft.MainAxisAlignment.CENTER
-            ),
-            self.success_dialog,
-            self.error_dialog,
+            )
         ]
 
 
     def _validar_y_enviar(self, e):
-
         patron = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         email = self.email.value.strip() if self.email.value else ""
         name = self.name.value.strip() if self.name.value else ""
@@ -167,25 +166,44 @@ class RegisterScreen(ft.Column):
             self.email.border_color = "#F3E6D5"
 
         if validate_name and validate_email:
-            self.page.dialog = self.loading_dialog
-            self.loading_dialog.open = True
+            self.btn_registro.disabled = True
             self.page.update()
 
+            self.page.open(self.loading_dialog)
+
             new_user = User(name=name, email=email)
-            self.status = self.backend_service.register_user(new_user)
-            self.loading_dialog.open = False
+
+            self.status = {
+                'status': False,
+                'message': 'No se ha podido enviar el registro, intentelo de nuevo'
+            }
+
+            try:
+                self.status = self.backend_service.register_user(new_user)
+            except Exception as e:
+                error = traceback.format_exc()
+                print("------------------------------------------------------------------")
+                print(f"Error: {__name__}Diagnóstico: {error}")
+                print("------------------------------------------------------------------")
+                
+                self.page.close(self.loading_dialog)
+                self._show_error_dialog("Error de registro", "Ha ocurrido un error durante el registro", usar_evento=False)
+                self.btn_registro.disabled = False
+                self.page.update()
+                return
+            
+            self.page.close(self.loading_dialog)
             self.page.update()
+            self.btn_registro.disabled = False
 
             if self.status.get('status'):
                 self.name.value = ""
                 self.email.value = ""
                 self.success_dialog.content.value = self.status.get('message')
-                self.page.dialog = self.success_dialog
-                self.success_dialog.open = True
+                self.page.open(self.success_dialog)
             else:
                 self.error_dialog.content.value = self.status.get('message')
-                self.page.dialog = self.error_dialog
-                self.error_dialog.open = True
+                self.page.open(self.error_dialog)
         
         self.page.update()
 
@@ -208,16 +226,21 @@ class RegisterScreen(ft.Column):
         self.page.update()
 
     def _close_dialog(self, e):
+        if self.status.get('status'):
+            self.page.close(self.success_dialog)
+        else:
+            self.page.close(self.error_dialog)
 
-        self.success_dialog.open = False
-        self.error_dialog.open = False
-
-        self.page.dialog = None
         self.page.update()
         
         if self.status.get('status'):
             self.page.clean()
             time.sleep(0.1)
             self.on_success()
+    
+    def _show_error_dialog(self, title, menssage, usar_evento=False): # 👈 Añadimos usar_evento con False por defecto
+        dialog = ShowError(self.page, title, menssage, usar_evento=usar_evento)
+        self.page.open(dialog)
+        return dialog.click_event
 
         

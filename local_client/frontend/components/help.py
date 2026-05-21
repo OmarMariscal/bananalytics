@@ -1,8 +1,12 @@
 import flet as ft
 
 class HelpIcon(ft.Container):
-    def __init__(self, help_id: int, aux):
+    def __init__(self, help_id: int, aux, callback=None, data_package=None):
         super().__init__()
+        
+        self.callback = callback
+        self.data_package = data_package
+        
         def create_badge(text, bg, color):
             return ft.Container(
                 content=ft.Text(text, size=10, weight="bold", color=color),
@@ -56,7 +60,6 @@ class HelpIcon(ft.Container):
                 ft.Row([stable, ft.Text(": ", weight="bold", color=ft.colors.ON_SURFACE),
                         ft.Text("Este producto tendra una venta igual o similar a comparacion de su venta promedio", weight="bold", color=ft.colors.ON_SURFACE)], 
                         spacing=5),
-                HelpIcon(help_id= 1 , aux ="")
             ]
         elif help_id == 4:
             self.title_dilog="¿Qué es el Margen de Error?"
@@ -65,7 +68,6 @@ class HelpIcon(ft.Container):
                 ft.Text("de lo que se dice en la prediccion", weight="bold", color=ft.colors.ON_SURFACE)
             ]
 
-        # Icono principal
         self.content = ft.Icon(name=ft.icons.HELP_OUTLINE_ROUNDED, color="#8D7A66", size=20)
         self.padding = 5
         self.border_radius = 20
@@ -87,17 +89,19 @@ class HelpIcon(ft.Container):
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER
             ),
             actions=[
-                ft.TextButton("Entendido", on_click=self.close_help) # Quitamos el lambda para limpiar mejor
+                ft.TextButton("Entendido", on_click=self.close_help)
             ],
             bgcolor=ft.colors.ON_SURFACE_VARIANT,
             shape=ft.RoundedRectangleBorder(radius=12),
         )
         
-        # En lugar de page.open, usamos el overlay
+        self.page.dialog = self.dialog
         self.dialog.open = True
-        self.page.overlay.append(self.dialog)
         self.page.update()
 
     def close_help(self, e):
         self.dialog.open = False
         self.page.update()
+        
+        if self.callback is not None and self.data_package is not None:
+            self.callback(self.data_package)
