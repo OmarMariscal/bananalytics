@@ -46,3 +46,6 @@ pruebas/
 #Configuraciones y Cachee de datos
 Conf/
 data/
+
+#Caché de imágenes en local
+image_cache/
