@@ -1,120 +1,97 @@
-#SALE A INTERNET, ENTREGA LA INFORMACION A LA API DE ANGEL Y TRAE DE REGRESO LA RESPUESTA
+"""
+Cliente HTTP (Capa de Red).
+Se encarga exclusivamente de negociar la conexión con el modelo en la Nube.
+Maneja tokens JWT de seguridad y caídas por timeout.
+"""
 
-import requests #Libreria que permite realizar peticiones HTTP
+import os
+import requests
+from dotenv import load_dotenv
+
+# Ruta absoluta corregida para Pycharm
 from shared.models.user import User
 
+load_dotenv()
+
 class ApiClient:
-    """
-    Se encarga exclusivamente de la comunicacion hacia la Nube.
-    Abstrae la complejidad de la red para que el BackendService solo reciba respuestas limpias en formato diccionario.
-    """
     def __init__(self):
-        """
-        Constructor.
-        Prepara las credenciales y la ruta de destino hacia el servidor de Angel.
-        """
-        self.api_key = "Bananalytics-Super-Secret-Key-2026" #Llave para permitir el acceso
-        self.base_url = "https://bananalytics.onrender.com/api/v1" #Direccion base de la API de Angel
+        self.api_key = os.getenv("API_KEY")
+        self.base_url = "https://bananalytics.onrender.com/api/v1"
 
-    def check_health(self):
-        url_chequeo = f"{self.base_url}/health"
-
+    def check_health(self) -> bool:
+        """Ping básico para validar que el servidor no está reiniciándose."""
         try:
-            respuesta = requests.get(url_chequeo, timeout=3)
-
+            respuesta = requests.get(f"{self.base_url}/health", timeout=3)
             if respuesta.status_code == 200:
                 datos = respuesta.json()
-
-                servidor_listo = datos.get("status") == "online"
-                db_lista = datos.get("base_datos") == "conectada"
-
-                if servidor_listo and db_lista:
-                    return True
-                else:
-                    print(f"Servidor en linea pero la base de datos presenta problemas: {datos}")
-                    return False
-
-            print(f"El servidor tiene problemas para la conexion (Status: {respuesta.status_code})")
-
+                return datos.get("status") == "online" and datos.get("base_datos") == "conectada"
+            return False
         except requests.exceptions.RequestException:
-            print("Imposible conectar. Revisar la conexion o el estado del servidor.")
             return False
 
-
-    #Rogelio pasa el usuario y este metodo lo envia
-    def register_user(self, user: User) -> dict:
+    def register_user(self, user: User, ubicacion: dict) -> dict:
         """
-        Flujo de Alta de Sucursal.
-        Empaqueta los datos del usuario local y solicita a la nube un 'id_negocio' oficial.
+        Intercambia las credenciales iniciales de la tienda por un JWT permanente.
+        Utiliza una Master API Key por seguridad en este paso inicial.
         """
-        #Construye la direccion completa a la que tiene que ir el paquete
         url_registro = f"{self.base_url}/business/register"
-        #El paquete JSON que se entrega a Angel
         payload = {
             "name": user.name,
             "email": user.email,
-            "city": "Guadalajra, Jalisco",
-            "lat": 20.6596,
-            "lng": -103.3496
+            "city": ubicacion.get("ciudad", "Guadalajara"),
+            "lat": ubicacion.get("latitud", 20.6596),
+            "lng": ubicacion.get("longitud", -103.3496)
         }
-        headers = {
-                    "X-API-Key": self.api_key,
-                   "Content-Type": "application/json"
-                   } #Etiquetas fuera de la caja
+        headers = {"X-API-Key": self.api_key, "Content-Type": "application/json"}
 
         try:
-            #Se hace peticion POST, pasamos la URL, el JSON, las etiquetas. Si el servidor no responde en 10 segundos, se rinde y regresa
             response = requests.post(url_registro, json=payload, headers=headers, timeout=10)
-            #La respuesta es una confirmacion de recibo
             data = response.json()
 
-            #Si todo salio bien, devolvemos un diccionario de exito al BackendService. Si no, devolvemos el error que el servidor haya enviado
-            if response.status_code == 200 and data.get("status") == "exito":
-                return {"status": "exito", "mensaje": "Registro completado", "id_negocio": data.get("id_negocio", "1")}
-            return {"status": data.get("status", "fail"), "mensaje": data.get("mensaje", "Error conocido")}
-
-
+            if response.status_code == 201:
+                return {
+                    "status": "exito",
+                    "id_negocio": data.get("id_negocio"),
+                    "token": data.get("token")
+                }
+            elif response.status_code == 409:
+                return {"status": "email_repeated", "mensaje": data.get("mensaje")}
+            return {"status": "fail", "mensaje": "Error interno del servidor."}
         except requests.exceptions.RequestException:
-            return {"status": "fail", "mensaje": "No se pudo conectar con el servidor"}
+            return {"status": "fail", "mensaje": "Error de red."}
 
-
-    #Traemos de la API toda la informacion que Rogi ocupe para el dashboard
-    def get_dashboard_data(self, store_id: str) -> dict:
-
-    #Trae todas las predicciones, alertas y resumenes de ventas para rellenar
-        #la pantalla principal de la aplicacion.
-
-        url = f"{self.base_url}/business/{store_id}/predictions" #Ruta con el id de la tienda inyectado para identificar que datos enviar
-        headers = {
-            "X-API-Key": self.api_key,
-            "Content-Type": "application/json"
-        }
+    def get_dashboard_data(self, store_id: str, token: str) -> dict:
+        """Descarga las predicciones de Machine Learning."""
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         try:
-            respuesta = requests.get(url, headers=headers, timeout=10)
-            if respuesta.status_code == 200:
-                return respuesta.json()
-            return {} #Si Angel manda error, devolvemos un lienzo en blanco para no crashear
+            respuesta = requests.get(f"{self.base_url}/business/{store_id}/predictions", headers=headers, timeout=10)
+            return respuesta.json() if respuesta.status_code == 200 else {}
         except requests.exceptions.RequestException:
             return {}
 
-    #Viaja a la API para traer toda la informacion de un solo producto
-    def get_product_data(self, store_id: str, barcode: str) -> dict:
-
-        #Viaja a la API para traer el historial detallado y las predicciones
-        #de un unico producto escaneado.
-
-        url = f"{self.base_url}/business/{store_id}/{barcode}"
-        headers = {
-            "X-API-Key": self.api_key,
-            "Content-Type": "application/json"
-        }
+    def get_product_data(self, store_id: str, barcode: str, token: str) -> dict:
+        """Descarga el historial de ventas específico para dibujar la gráfica de detalle."""
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         try:
-            respuesta = requests.get(url, headers=headers, timeout=10)
-            if respuesta.status_code == 200:
-                return respuesta.json()
-            return {}
+            respuesta = requests.get(f"{self.base_url}/business/{store_id}/{barcode}", headers=headers, timeout=10)
+            return respuesta.json() if respuesta.status_code == 200 else {}
         except requests.exceptions.RequestException:
             return {}
 
+    def get_weekly_report(self, store_id: str, token: str) -> dict:
+        """Recibe el archivo binario Base64 del reporte PDF."""
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        try:
+            respuesta = requests.get(f"{self.base_url}/business/{store_id}/report", headers=headers, timeout=20)
+            return respuesta.json() if respuesta.status_code == 200 else {}
+        except requests.exceptions.RequestException:
+            return {}
 
-
+    def sync_sales(self, paquete: dict, token: str) -> bool:
+        """Sube el paquete masivo de ventas a la API."""
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        try:
+            respuesta = requests.post(f"{self.base_url}/ventas/sync", json=paquete, headers=headers, timeout=15)
+            return respuesta.status_code == 200
+        except requests.exceptions.RequestException:
+            return False

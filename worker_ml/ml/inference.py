@@ -270,6 +270,14 @@ def get_store_predictions(
         try:
             #  Modelo y margen de error semanal — sin consulta extra a la BD 
             model, _, model_rmse = load_or_create_model(barcode)
+
+            if not hasattr(model, "coef_"):
+                logger.warning(
+                    f"    ⚠️  Modelo de {barcode} sin entrenamiento previo — "
+                    f"omitido hasta el próximo ciclo."
+                )
+                continue
+            
             margin               = int(round(math.sqrt(_settings.prediction_days) * model_rmse))
 
             #  Referencia histórica semanal 
