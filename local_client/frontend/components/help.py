@@ -31,6 +31,10 @@ class HelpIcon(ft.Container):
         self.help_id = help_id
         self.aux = aux
         self.title_dilog=""
+
+        self.help_id = help_id
+        self.aux = aux
+        self.title_dilog=""
         self.help_content = []
 
         if help_id == 1:
@@ -65,7 +69,7 @@ class HelpIcon(ft.Container):
             self.title_dilog="¿Qué es el Margen de Error?"
             self.help_content = [
                 ft.Text(f"El signo ± significa que la prediccion puede ser mayor en {aux} unidades arriba o abajo", weight="bold", color=ft.colors.ON_SURFACE),
-                ft.Text("de lo que se dice en la prediccion", weight="bold", color=ft.colors.ON_SURFACE)
+                ft.Text("de lo que se dice en la prediccion", weight="bold", color=ft.colors.ON_SURFACE),
             ]
 
         self.content = ft.Icon(name=ft.icons.HELP_OUTLINE_ROUNDED, color="#8D7A66", size=20)
@@ -95,13 +99,10 @@ class HelpIcon(ft.Container):
             shape=ft.RoundedRectangleBorder(radius=12),
         )
         
-        self.page.dialog = self.dialog
-        self.dialog.open = True
-        self.page.update()
+        e.page.open(self.dialog)
 
     def close_help(self, e):
-        self.dialog.open = False
-        self.page.update()
+        e.page.close(self.dialog)
         
         if self.callback is not None and self.data_package is not None:
             self.callback(self.data_package)
