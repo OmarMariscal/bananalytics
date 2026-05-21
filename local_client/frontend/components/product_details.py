@@ -6,12 +6,13 @@ from frontend.components.help import HelpIcon
 from frontend.components.image_cache import ImageCacheManager
 
 class ProductDetailDialog(ft.AlertDialog):
-    def __init__(self, alert, page, backend_service):
+    def __init__(self, data_package, page, reopen_callback=None):
         super().__init__()
-        self.alert = alert
+        self.data_package = data_package
+        self.alert = data_package["alert"]
+        self.history = data_package["history"]
         self.page = page
-        self.backend_service = backend_service
-        
+        self.reopen_callback = reopen_callback
         self.modal = True
         self.shape = ft.RoundedRectangleBorder(radius=20)
         self.content_padding = 0
@@ -23,7 +24,7 @@ class ProductDetailDialog(ft.AlertDialog):
             color=ft.colors.ON_SURFACE
         )
 
-        path_local = ImageCacheManager.get_local_image_path(alert.image_url)
+        path_local = ImageCacheManager.get_local_image_path(self.alert.image_url)
 
         self.content = ft.Container(
             width=1000,
@@ -172,7 +173,7 @@ class ProductDetailDialog(ft.AlertDialog):
                 content=ft.Container(
                     bgcolor=color_center,
                     shape=ft.BoxShape.CIRCLE,
-                    margin=4 #if active else 0
+                    margin=4
                 ) if active else None,
                 shadow=ft.BoxShadow(blur_radius=10, color=color, spread_radius=1)
             ),
@@ -180,15 +181,15 @@ class ProductDetailDialog(ft.AlertDialog):
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=5)
 
     def _stat_box(self, title, value, text, wight, margin):
-        # 1. Creamos la lista de controles básica
         row_content = [
             ft.Text(value, size=32, weight="bold", color=ft.colors.ON_SURFACE),
         ]
         
-        # 2. Solo agregamos el icono si realmente hay un margen/ayuda
         if margin != "":
-            margin_ex=ft.Row([ft.Text(f"±{margin}", size=15, weight="bold", color="#8D7A66"), HelpIcon(help_id=4, aux=margin)],
-                             spacing=0)
+            margin_ex=ft.Row([
+                ft.Text(f"±{margin}", size=15, weight="bold", color="#8D7A66"),
+                HelpIcon(help_id=4, aux=margin, callback=self.reopen_callback, data_package=self.data_package)
+            ], spacing=0)
             row_content.append(margin_ex)
 
         return ft.Container(
@@ -210,17 +211,7 @@ class ProductDetailDialog(ft.AlertDialog):
         )
 
     def _build_sales_chart(self):
-        self.loading_dialog = LoadingDialog("Obteniendo historial de ventas, por favor espera...")
-        self.page.dialog = self.loading_dialog
-        self.loading_dialog.open = True
-        self.page.update()
-
-        full_history = self.backend_service.get_sales_history(self.alert.barcode)
-
-        history_data = full_history[-90:] 
-        
-        self.loading_dialog.open = False
-        self.page.update()
+        history_data = self.history
 
         if len(history_data) < 3:
             return ft.Container(

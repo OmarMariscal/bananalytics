@@ -3,9 +3,9 @@ import flet as ft
 class LoadingDialog(ft.AlertDialog):
     def __init__(self, mensaje):
         super().__init__()
-        self.modal = False
+        self.modal = True 
         self.bgcolor = ft.colors.ON_SURFACE_VARIANT
-        
+        self.on_dismiss = lambda e: None
         self.texto_mensaje = ft.Text(mensaje, size=20, color=ft.colors.ON_SURFACE, weight="bold")
         
         self.content = ft.Container(
@@ -23,4 +23,5 @@ class LoadingDialog(ft.AlertDialog):
 
     def actualizar_mensaje(self, nuevo_mensaje):
         self.texto_mensaje.value = nuevo_mensaje
-        self.update()
+        if self.page:
+            self.update()

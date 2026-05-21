@@ -1,15 +1,40 @@
 from shared.models.prediction import PredictionAlert
 from shared.models.info_config import ConfigStats
 from shared.models.user import User
+
+from datetime import datetime, timedelta
 from datetime import date
 import time
 import random
-from datetime import datetime, timedelta
 
 class MockBackendService:
+    def __init__(self, failure_rate: float = 0.0):
+        """
+        Instancia el servicio mock de Bananalitics.
+        
+        :param failure_rate: Flotante entre 0.0 y 1.0 que define la probabilidad de lanzar un error.
+                             0.0 = Modulo normal (nunca falla).
+                             0.25 = 25% de probabilidad de lanzar excepciones en cada llamada.
+                             1.0 = Servidor completamente caído (siempre falla).
+        """
+        self.failure_rate = failure_rate
+
+    def _simulate_chaos(self, method_name: str):
+        """Método interno que decide si inyectar una excepción a propósito."""
+        if random.random() < self.failure_rate:
+            common_errors = [
+                ConnectionError(f"[Chaos Monkey] Tiempo de espera agotado (Timeout) al conectar con Bananalitics en '{method_name}'."),
+                ValueError(f"[Chaos Monkey] Error 500: Internal Server Error en el endpoint de '{method_name}'."),
+                RuntimeError(f"[Chaos Monkey] La base de datos no respondió a tiempo al ejecutar '{method_name}'.")
+            ]
+            raise random.choice(common_errors)
+
     def get_alerts(self) -> list[PredictionAlert]:
         time.sleep(0.5)
-        all_alerts = [PredictionAlert(
+        #self._simulate_chaos("get_alerts")
+        
+        all_alerts = [
+            PredictionAlert(
                 product_name="Premium Cola",
                 barcode="7501000123456",
                 category="Bebidas",
@@ -320,14 +345,12 @@ class MockBackendService:
                 margin_of_error=random.randint(0, 100),
                 type="deficit",
                 feature=True,
-            ),]
+            ),
+        ]
         
         tam = random.randint(1, len(all_alerts))
-    
-        # 3. 'random.sample' elige elementos ÚNICOS de la lista automáticamente
-        list_return = random.sample(all_alerts, tam)
-        
-        # 4. Asignarles el tipo y feature aleatorio a los elegidos
+        list_return = random.sample(all_alerts, 2)
+
         for alert in list_return:
             opcion = random.randint(1, 3)
             if opcion == 1:
@@ -342,9 +365,9 @@ class MockBackendService:
                 
         return list_return
 
-
     def get_dashboard_stats(self) -> dict:
         time.sleep(0.5)
+        #self._simulate_chaos("get_dashboard_stats")
         return {
             "total_scans_today": random.randint(0, 10000),
             "active_predictions": random.randint(0, 10000),
@@ -354,6 +377,7 @@ class MockBackendService:
         
     def get_product_detail(self, barcode: str) -> PredictionAlert:
         time.sleep(0.5)
+        self._simulate_chaos("get_product_detail")
         return PredictionAlert(
             product_name="Príncipes",
             barcode="7741500152056",
@@ -367,35 +391,27 @@ class MockBackendService:
         )
     
     def is_first_start(self) -> bool:
-        op: int = random.randint(0, 1) == 0
-        return False #if op else True
+        #self._simulate_chaos("is_first_start")
+        return False
     
     def register_user(self, user: User) -> dict:
         time.sleep(0.5)
+        #self._simulate_chaos("register_user")
         return {
             'status': True,
-            'message': 'El correo a sido registrado'
+            'message': 'El correo ha sido registrado'
         }
 
     def get_sales_history(self, barcode: str) -> list[dict]:
         time.sleep(0.5)
-        """
-        Genera un historial de ventas ficticio.
-        cantidad_dias: Número de registros a generar.
-        """
-        # Simulamos un pequeño retraso de red (opcional)
-        # import time
-        # time.sleep(0.5)
+        #self._simulate_chaos("get_sales_history")
 
         historial = []
         hoy = datetime.now()
         cantidad_dias: int = random.randint(0, 100)
 
         for i in range(cantidad_dias):
-            # Restamos i días a la fecha actual para ir hacia atrás en el tiempo
             fecha = hoy - timedelta(days=i)
-            
-            # Generamos un volumen aleatorio entre 5 y 100 (puedes ajustar el rango)
             volumen_random = random.randint(0, 100)
             
             nuevo_registro = {
@@ -404,14 +420,12 @@ class MockBackendService:
             }
             historial.append(nuevo_registro)
 
-        # El bucle genera de hoy hacia atrás, así que volteamos la lista 
-        # para que la gráfica la lea de más antiguo a más reciente.
         historial.reverse()
-        
         return historial
     
     def get_app_stats(self) -> ConfigStats:
         time.sleep(0.5)
+        #self._simulate_chaos("get_app_stats")
         return ConfigStats(
             user_name="Roro Pirroro",
             email="elRoroPirroro@gmail.com",
@@ -421,10 +435,12 @@ class MockBackendService:
         
     def get_server_status(self) -> bool:
         time.sleep(0.5)
+        #self._simulate_chaos("get_server_status")
         op: int = random.randint(0, 1) == 0
         return False if op else True
 
     def sync(self) -> bool:
         time.sleep(0.5)
+        #self._simulate_chaos("sync")
         op: int = random.randint(0, 1) == 0
         return False if op else True

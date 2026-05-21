@@ -1,12 +1,14 @@
 import flet as ft
+import traceback
+import threading
 from shared.protocols.i_backend_service import BackendProtocol
 from frontend.screens.register_screen import RegisterScreen
 from frontend.app_layout import MainLayout
+from frontend.components.show_error import ShowError
 
 class App:
     def __init__(self, svc: BackendProtocol, page: ft.Page):
         self.svc = svc
-
         self.page = page
         page.window_maximized = True
 
@@ -14,7 +16,7 @@ class App:
             color_scheme=ft.ColorScheme(
                 background="#FF8400",
                 surface="#FDF3E7",
-                surface_variant = "white",
+                surface_variant="white",
                 on_surface="#2D2114",
                 on_surface_variant="#FDF3E7",
                 outline="#FFFBF8",
@@ -25,19 +27,39 @@ class App:
             color_scheme=ft.ColorScheme(
                 background="#FF8400",
                 surface="black",
-                surface_variant = "#1E1E1E",
+                surface_variant="#1E1E1E",
                 on_surface="#F9F7F2",
                 on_surface_variant="#333333",
                 outline="#333333"
             )
         )
 
-        page.fonts = {
-        "RobotoMono": "https://raw.githubusercontent.com/google/fonts/main/apache/robotomono/RobotoMono%5Bwght%5D.ttf"
-        }
-        
+        self.page.update()
+        self.iniciar_app()
 
-        if self.svc.is_first_start():
+    def iniciar_app(self):
+        start = True
+        try:
+            start = self.svc.is_first_start()
+        except Exception as ex:
+            error = traceback.format_exc()
+            print("------------------------------------------------------------------")
+            print(f"Error: {__name__}Diagnóstico: {error}")
+            print("------------------------------------------------------------------")
+            
+            esperar_usuario = self._show_error_dialog(
+                title="Error al iniciar", 
+                menssage="No se pudo iniciar la aplicación, favor de intentar más tarde",
+                usar_evento=True
+            )
+            
+            esperar_usuario.wait()
+            
+            # Cierre limpio de la app
+            self.page.window_close()
+            return
+
+        if start:
             self._show_register()
             return
 
@@ -47,7 +69,6 @@ class App:
         pantalla_carga = ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.ProgressRing(color="#C38441", stroke_width=5),
                     ft.Text(
                         "Construyendo interfaz, por favor espera...", 
                         size=25, 
@@ -79,3 +100,8 @@ class App:
         )
         self.page.add(registro)
         self.page.update()
+
+    def _show_error_dialog(self, title, menssage, usar_evento=True):
+        dialog = ShowError(self.page, title, menssage, usar_evento=usar_evento)
+        self.page.open(dialog)
+        return dialog.click_event
