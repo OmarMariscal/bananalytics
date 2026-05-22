@@ -121,7 +121,7 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
         #Conexión a la API Histórica de Open-Meteo====================================================================
         #Se decidió conservar la consulta en URL en vez de usar su librería especializada porque es una consulta sencilla y se reduce la cantidad de dependencias 
         print("Consultando clima histórico en Open-Meteo...")
-        url_clima = "https://archive-api.open-meteo.com/v1/archive"
+        url_clima = "https://archive-api.open-meteo-servidor-destruido.com/v1/archive"
 
         parametros = {
             "latitude": latitud, #Usamos las coordenadas pasadas como parámetros a la función
@@ -132,7 +132,7 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
             "timezone": "auto" #Ajusta las horas a la zona horaria local de las coordenadas
         }
 
-        respuesta = requests.get(url_clima, params=parametros, timeout=0.0001)
+        respuesta = requests.get(url_clima, params=parametros)
         respuesta.raise_for_status() # Lanza un error si la API falla
         
         datos_clima = respuesta.json()
@@ -207,14 +207,14 @@ def obtener_o_crear_producto(barcode: str, db: Session):
 
     #Si no existe, entonces consultamos a GO UPC
     print(f"Código {barcode} no existe en Neon. Consultando GO UPC...")
-    url = f"https://go-upc.com/api/v1/code/{barcode}"
+    url = f"https://go-upc-caido-servicios.com/api/v1/code/{barcode}"
     
     headers = {
         "Authorization": f"Bearer {GOUPC_API_KEY}"
     }
     
     try:
-        respuesta = requests.get(url, headers=headers, timeout=0.0001)
+        respuesta = requests.get(url, headers=headers)
         
         #Si el producto no está registrado, Go UPC devuelve 404
         if respuesta.status_code == 404:
