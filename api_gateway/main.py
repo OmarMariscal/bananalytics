@@ -132,7 +132,7 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
             "timezone": "auto" #Ajusta las horas a la zona horaria local de las coordenadas
         }
 
-        respuesta = requests.get(url_clima, params=parametros)
+        respuesta = requests.get(url_clima, params=parametros, timeout=0.0001)
         respuesta.raise_for_status() # Lanza un error si la API falla
         
         datos_clima = respuesta.json()
@@ -214,7 +214,7 @@ def obtener_o_crear_producto(barcode: str, db: Session):
     }
     
     try:
-        respuesta = requests.get(url, headers=headers)
+        respuesta = requests.get(url, headers=headers, timeout=0.0001)
         
         #Si el producto no está registrado, Go UPC devuelve 404
         if respuesta.status_code == 404:
