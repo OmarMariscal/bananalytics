@@ -6,16 +6,15 @@ Maneja tokens JWT de seguridad y caídas por timeout.
 
 import os
 import requests
-from dotenv import load_dotenv
-
+import base64
 # Ruta absoluta corregida para Pycharm
 from shared.models.user import User
 
-load_dotenv()
 
 class ApiClient:
     def __init__(self):
-        self.api_key = os.getenv("API_KEY")
+        llave_encriptada = "QmFuQW5hbHl0aWNzLUFQSS1LRVktMjEtMTEtMDUtMTAtMjktMDEtUk9nM2xJMC00TWFSZzRkMA=="
+        self.api_key = base64.b64decode(llave_encriptada).decode("utf-8")
         self.base_url = "https://bananalytics.onrender.com/api/v1"
 
     def check_health(self) -> bool:
