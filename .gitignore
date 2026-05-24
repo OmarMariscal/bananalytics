@@ -49,3 +49,10 @@ data/
 
 #Caché de imágenes en local
 image_cache/
+
+# Empaquetado y Ejecutables
+build/
+dist/
+*.spec
+installer_output/
+*.exe
