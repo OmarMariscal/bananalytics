@@ -12,6 +12,8 @@ from typing import List
 #Importación de SQLAlchemy para la conexión a Neon (BD)
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
+#Importamos la función para obtener la sesión de la base de datos y las clases de las tablas para hacer consultas e inserciones
+from database import get_db, SessionLocal
 #Importamos las clases de la base de datos para hacer consultas e inserciones
 from models import Tienda, Producto, Venta, Prediccion, Reporte
 
@@ -53,23 +55,8 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
 #Leemos la contraseña correcta desde nuestro archivo .env
 SECRET_KEY = os.getenv("API_KEY")
 
-#Cargar la URL de conexión desde el .env para la conexión a Neon
-DATABASE_URL = os.getenv("DATABASE_URL")
-
 #Cargar la llave de la API de códigos de barras desde el .env
 GOUPC_API_KEY = os.getenv("GOUPC_API_KEY")
-
-# Creamos el motor y la sesión
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Dependencia: Esto abre la conexión a la base de datos cada que llega una petición y la cierra al terminar
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 #Verifica si la llave que envían es la correcta
 def verify_api_key(api_key: str = Depends(api_key_header)):
@@ -132,16 +119,22 @@ def procesar_y_guardar_ventas(datos: SincronizacionMensaje, latitud: float, long
             "timezone": "auto" #Ajusta las horas a la zona horaria local de las coordenadas
         }
 
-        respuesta = requests.get(url_clima, params=parametros)
-        respuesta.raise_for_status() # Lanza un error si la API falla
-        
-        datos_clima = respuesta.json()
-
-        #Extraemos las listas de datos (cada lista tiene 24 elementos, uno por hora del día)
-        temperaturas = datos_clima["hourly"]["temperature_2m"]
-        codigos_clima = datos_clima["hourly"]["weather_code"]
-        
-        print(f"¡Clima obtenido con éxito para la fecha {fecha_open_meteo}!")
+        try:
+            respuesta = requests.get(url_clima, params=parametros, timeout=10)
+            respuesta.raise_for_status() # Lanza un error si la API falla
+            
+            datos_clima = respuesta.json()
+            #Extraemos las listas de datos (cada lista tiene 24 elementos, uno por hora del día)
+            temperaturas = datos_clima["hourly"]["temperature_2m"]
+            codigos_clima = datos_clima["hourly"]["weather_code"]
+            
+            print(f"¡Clima obtenido con éxito para la fecha {fecha_open_meteo}!")
+            
+        except Exception as e_clima:
+            print(f"xXX Advertencia: Error al obtener el clima ({str(e_clima)}). Guardando ventas sin datos meteorológicos. XXx")
+            # Si falla, creamos listas de 24 elementos vacíos (None) para que el ciclo de abajo no colapse al buscar la hora
+            temperaturas = [None] * 24
+            codigos_clima = [None] * 24
 
         #Conexión a la API de Go UPC para obtener información de los productos=========================================
         print("Procesando códigos de barras y preparando inserciones...")
@@ -201,12 +194,17 @@ def obtener_o_crear_producto(barcode: str, db: Session):
     #Buscamos en nuestra base de datos central primero
     producto_existente = db.query(Producto).filter(Producto.barcode == barcode).first()
     
-    #Si ya lo conocemos, lo devolvemos inmediatamente sin gastar saldo de API
+    # Lógica de Auto-Sanación:
+    # Si el producto existe, pero lo guardamos temporalmente en una caída de red anterior, forzamos la re-consulta
     if producto_existente:
-        return producto_existente
+        if producto_existente.product_name == "Pendiente de Sincronización":
+            print(f"--== El código {barcode} estaba pendiente. Reintentando conectar con GO-UPC... ==--")
+            # No hacemos el 'return' para obligarlo a bajar al código de GO-UPC
+        else:
+            return producto_existente # Si tiene info real, lo devolvemos inmediatamente sin gastar saldo de API
 
-    #Si no existe, entonces consultamos a GO UPC
-    print(f"Código {barcode} no existe en Neon. Consultando GO UPC...")
+    #Si no existe o si está "Pendiente", entonces consultamos a GO UPC
+    print(f"Consultando GO UPC para el código {barcode}...")
     url = f"https://go-upc.com/api/v1/code/{barcode}"
     
     headers = {
@@ -219,37 +217,62 @@ def obtener_o_crear_producto(barcode: str, db: Session):
         #Si el producto no está registrado, Go UPC devuelve 404
         if respuesta.status_code == 404:
             print(f"Advertencia: Producto {barcode} no encontrado en GO UPC.")
-            nuevo_producto = Producto(
-                barcode=barcode,
-                product_name="Producto Desconocido",
-                category="Sin Categoría",
-                image_url="Sin Imagen"
-            )
+            nombre = "Producto Desconocido"
+            categoria = "Sin Categoría"
+            imagen = "Sin Imagen"
         else:
             # Si todo salió bien, extraemos los datos
             respuesta.raise_for_status()
             datos_api = respuesta.json()
             info_producto = datos_api.get("product", {})
             
+            nombre = info_producto.get("name") or "Nombre no disponible"
+            categoria = info_producto.get("category") or "Sin Categoría"
+            imagen = info_producto.get("imageUrl") or "Sin Imagen"
+            print(f"¡Producto {nombre} descargado exitosamente!")
+
+        # Si el producto ya existía (pero estaba Pendiente), lo actualizamos con la nueva información en vez de crear un nuevo registro
+        if producto_existente:
+            producto_existente.product_name = nombre
+            producto_existente.category = categoria
+            producto_existente.image_url = imagen
+            db.commit()
+            db.refresh(producto_existente)
+            return producto_existente
+        else:
+            # Si de verdad era nuevo, lo creamos normalmente
             nuevo_producto = Producto(
                 barcode=barcode,
-                product_name=info_producto.get("name") or "Nombre no disponible",
-                category=info_producto.get("category") or "Sin Categoría",
-                image_url=info_producto.get("imageUrl") or "Sin Imagen"
+                product_name=nombre,
+                category=categoria,
+                image_url=imagen
             )
-            print(f"¡Producto {nuevo_producto.product_name} descargado de GO UPC!")
-
-        #Lo guardamos en Neon para la próxima vez
-        db.add(nuevo_producto)
-        db.commit()
-        db.refresh(nuevo_producto)
-        
-        return nuevo_producto
+            #Lo guardamos en Neon para la próxima vez
+            db.add(nuevo_producto)
+            db.commit()
+            db.refresh(nuevo_producto)
+            return nuevo_producto
 
     except Exception as e:
         print(f"Error al conectar con GO UPC para {barcode}: {str(e)}")
-        #Para no frenar el programa si la API se cae, devolvemos un genérico
-        return None
+        
+        # Si falló la red y el producto YA existía como pendiente, solo lo devolvemos para no perder la venta de hoy
+        if producto_existente:
+            return producto_existente
+            
+        # Si falló la red y el producto NO existía, creamos un registro "dummy" para salvar la venta
+        print(f"xXX Red caída. Creando registro temporal para {barcode}... XXx")
+        producto_contingencia = Producto(
+            barcode=barcode,
+            product_name="Pendiente de Sincronización",
+            category="Sin Categoría",
+            image_url="Sin Imagen"
+        )
+        db.add(producto_contingencia)
+        db.commit()
+        db.refresh(producto_contingencia)
+        
+        return producto_contingencia
     
 
 #-------------------------------------------------- ENDPOINTS ----------------------------------------------
