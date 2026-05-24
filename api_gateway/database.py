@@ -1,5 +1,6 @@
 import os
 from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker #Para crear sesiones de base de datos
 from dotenv import load_dotenv
 from models import Base  # Importa las tablas de models.py
 
@@ -7,8 +8,23 @@ from models import Base  # Importa las tablas de models.py
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-#Crear el "motor" que se conecta a Neon
-engine = create_engine(DATABASE_URL, echo=True)
+#Crear el único "motor" que se conecta a Neon para todo el proyecto
+engine = create_engine(
+    DATABASE_URL, 
+    pool_pre_ping=True, 
+    pool_recycle=300
+)
+
+# Fábrica de sesiones
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Dependencia de FastAPI
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 #Función para generar las tablas
 def init_db():
